@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Copy of Cyclic: Recurring Task & Goal Tracker",
+  "description": "A smart recurring task manager designed for periodic goals and repeating todos. Features automatic cycle resets, folder-based grouping, calendar view, advanced scheduling (Quarterly, Yearly, Custom), deadline reminders, and WeChat Push notifications.",
+  "requestFramePermissions": []
+}
