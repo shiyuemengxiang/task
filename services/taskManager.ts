@@ -1,9 +1,20 @@
 import { Task, Frequency, TaskHistory, LimitPeriod } from '../types';
 import { getStorage, setStorage } from './storageAdapter';
+import { getCurrentUser } from './authService';
 
-const STORAGE_KEY = 'cyclic_tasks_v1';
+// Base key
+const BASE_STORAGE_KEY = 'cyclic_tasks_v1';
 
-export type { Task }; // Re-export for convenience in services
+// Helper to get dynamic key based on current user
+const getStorageKey = () => {
+  const user = getCurrentUser();
+  if (user && user.username) {
+    return `${BASE_STORAGE_KEY}_${user.username}`;
+  }
+  return `${BASE_STORAGE_KEY}_guest`; // Default for guest/demo mode
+};
+
+export type { Task };
 
 /**
  * Determines if a date is in a different cycle than the reference date
@@ -119,10 +130,6 @@ export const getDaysUntilDeadline = (task: Task): number | null => {
     let targetYear = now.getFullYear();
     let targetMonth = now.getMonth();
     
-    // If today is past the deadline, the "next" deadline is next month? 
-    // Or is the deadline for the *current cycle*?
-    // Assuming deadline is for the current month's task.
-    
     let targetDate = new Date(targetYear, targetMonth, task.deadlineDay);
     
     // Handle month overflow (e.g. 31st)
@@ -146,8 +153,10 @@ export const getDaysUntilDeadline = (task: Task): number | null => {
 
 export const loadTasks = (): Task[] => {
   try {
-    // USE ADAPTER
-    const tasks = getStorage(STORAGE_KEY);
+    const key = getStorageKey();
+    const tasks = getStorage(key);
+    
+    // If no tasks for this user yet, return empty array
     if (!tasks || !Array.isArray(tasks)) return [];
     
     const nowStr = new Date().toISOString();
@@ -170,7 +179,6 @@ export const loadTasks = (): Task[] => {
           currentValue: 0,
           lastUpdated: nowStr,
           activityLog: [], // Reset current cycle logs
-          // Also reset notification state for new cycle
           pushConfig: task.pushConfig ? { ...task.pushConfig, lastPushDate: undefined } : undefined
         };
       }
@@ -187,6 +195,6 @@ export const loadTasks = (): Task[] => {
 };
 
 export const saveTasks = (tasks: Task[]) => {
-  // USE ADAPTER
-  setStorage(STORAGE_KEY, tasks);
+  const key = getStorageKey();
+  setStorage(key, tasks);
 };

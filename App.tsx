@@ -9,7 +9,7 @@ import { checkAndNotifyTasks } from './services/notificationService';
 import { TabBar, TabType } from './components/TabBar';
 import { MinePage } from './components/MinePage';
 import { v4 as uuidv4 } from 'uuid';
-import { FolderOpen, ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Infinity } from 'lucide-react';
 
 const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -18,13 +18,19 @@ const App: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
 
-  // Load tasks and initial logic
-  useEffect(() => {
+  // Function to load tasks (exposed so MinePage can trigger it)
+  const refreshTasks = () => {
     const loaded = loadTasks();
     setTasks(loaded);
+  };
 
-    // Webhook Push Notifications Check
+  // Load tasks on mount
+  useEffect(() => {
+    refreshTasks();
+    
+    // Initial webhook check
     const runPushCheck = async () => {
+        const loaded = loadTasks();
         if (loaded.length > 0) {
             const updatedTasks = await checkAndNotifyTasks(loaded);
             const hasChanges = updatedTasks.some((t, i) => t.pushConfig?.lastPushDate !== loaded[i].pushConfig?.lastPushDate);
@@ -37,9 +43,13 @@ const App: React.FC = () => {
     setTimeout(runPushCheck, 2000);
   }, []);
 
-  // Persist tasks
+  // Persist tasks whenever they change
   useEffect(() => {
-    if (tasks.length > 0) {
+    // Only save if we have loaded data logic. 
+    // Note: loadTasks handles empty array returns. 
+    // We verify tasks length before saving to avoid overwriting with empty on initial render if load was slow (though here it's sync).
+    // Actually, for local storage sync, we can just save.
+    if (tasks) {
       saveTasks(tasks);
     }
   }, [tasks]);
@@ -93,7 +103,9 @@ const App: React.FC = () => {
       if(window.confirm("确定要删除这个循环任务吗?")) {
           setTasks(prev => {
               const filtered = prev.filter(t => t.id !== id);
-              saveTasks(filtered); 
+              // We need to save immediately to storage here because set state is async 
+              // and if we switch tabs quickly it might not save? 
+              // Actually the useEffect [tasks] handles it.
               return filtered;
           });
       }
@@ -140,37 +152,50 @@ const App: React.FC = () => {
           `}
       </style>
       
-      {/* WeChat Style Top Navigation Bar (Simulated) */}
-      <div className="w-full bg-white sticky top-0 z-20 border-b border-gray-100 h-11 flex items-center justify-center">
-          <span className="font-bold text-gray-900 text-sm">
-            {activeTab === 'TASKS' ? (currentFolder || '循环清单') : activeTab === 'CALENDAR' ? '日历' : '个人中心'}
-          </span>
+      {/* Modern App Navigation Bar */}
+      <div className="w-full bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-gray-100/50 h-[52px] flex items-center justify-center px-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all">
+          {activeTab === 'TASKS' && currentFolder ? (
+            // Folder View Header with Back Button
+            <div className="flex items-center w-full relative justify-center animate-in fade-in duration-200">
+                <button 
+                    onClick={() => setCurrentFolder(null)}
+                    className="absolute left-0 p-2 -ml-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100/50 rounded-full transition-all active:scale-90"
+                    title="返回"
+                >
+                    <ChevronLeft size={26} />
+                </button>
+                <span className="font-bold text-lg text-gray-800 truncate max-w-[60%]">{currentFolder}</span>
+            </div>
+          ) : (
+            // Main Tab Header
+             <div className="w-full flex items-center justify-center gap-2 animate-in fade-in duration-200">
+                 {activeTab === 'TASKS' && <Infinity size={22} className="text-blue-600" strokeWidth={2.5} />}
+                 <span className="font-bold text-lg text-gray-800 tracking-wide">
+                    {activeTab === 'TASKS' ? '循环清单' : activeTab === 'CALENDAR' ? '日历视图' : '个人中心'}
+                 </span>
+             </div>
+          )}
       </div>
 
       {/* Main Content Area - Scrollable */}
-      <main className="w-full max-w-md flex-1 overflow-y-auto pb-24">
+      <main className="w-full max-w-md flex-1 overflow-y-auto pb-24 scrollbar-hide">
         
         {/* Tab 1: Tasks / Folders */}
         {activeTab === 'TASKS' && (
             <div className="px-4 pt-4">
-                {currentFolder && (
-                    <button 
-                        onClick={() => setCurrentFolder(null)}
-                        className="mb-4 flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600 transition-colors"
-                    >
-                        <ChevronLeft size={16} />
-                        返回文件夹
-                    </button>
-                )}
-
                 {!currentFolder ? (
                     <div className="space-y-4">
                          {Object.keys(groupedTasks).length === 0 ? (
-                             <div className="text-center py-20 text-gray-300 text-sm">
-                                 点击下方 + 号创建第一个任务
+                             <div className="flex flex-col items-center justify-center py-24 text-gray-300 space-y-4">
+                                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
+                                     <Infinity size={32} className="text-gray-300" />
+                                 </div>
+                                 <p className="text-sm">
+                                     {tasks.length === 0 ? "点击 + 号创建任务" : "暂无文件夹"}
+                                 </p>
                              </div>
                          ) : (
-                            <div className="grid grid-cols-1 gap-3">
+                            <div className="grid grid-cols-1 gap-3 pb-safe-bottom">
                                 {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
                                     const completedCount = groupTasks.filter(t => t.currentValue >= t.targetValue).length;
                                     const totalCount = groupTasks.length;
@@ -194,7 +219,7 @@ const App: React.FC = () => {
                          )}
                     </div>
                 ) : (
-                    <div className="space-y-3 animate-in slide-in-from-right-4 duration-200">
+                    <div className="space-y-3 animate-in slide-in-from-right-4 duration-300">
                         {groupedTasks[currentFolder]?.map(task => (
                             <TaskCard 
                                 key={task.id} 
@@ -207,6 +232,12 @@ const App: React.FC = () => {
                                 }}
                             />
                         ))}
+                        {/* Empty state for folder */}
+                        {groupedTasks[currentFolder]?.length === 0 && (
+                            <div className="text-center py-12 text-gray-400 text-xs">
+                                此文件夹暂无任务
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -219,9 +250,9 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {/* Tab 3: Me (Settings) */}
+        {/* Tab 3: Me (Settings & Auth) */}
         {activeTab === 'ME' && (
-            <MinePage />
+            <MinePage onUserChange={refreshTasks} />
         )}
 
       </main>
