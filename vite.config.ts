@@ -1,11 +1,21 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  base: './', // 关键：使用相对路径，确保在 Vercel/GitHub Pages/子目录下都能正确引用资源
-  build: {
-    outDir: 'dist',
+export default defineConfig(({ mode }) => {
+  // Load env file based on `mode` in the current working directory.
+  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
+  const env = loadEnv(mode, (process as any).cwd(), '');
+  
+  return {
+    plugins: [react()],
+    base: './', 
+    build: {
+      outDir: 'dist',
+    },
+    // Define global constants replacement
+    define: {
+      'process.env.API_KEY': JSON.stringify(env.API_KEY)
+    }
   }
 })
