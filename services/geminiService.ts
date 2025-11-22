@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CreateTaskPayload, Frequency, TaskType, LimitPeriod } from '../types';
 
+declare const process: any;
+
 // NOTE: In a real app, this should be proxied through a backend to hide the key.
 const apiKey = process.env.API_KEY || '';
 
