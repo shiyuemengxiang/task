@@ -1,11 +1,21 @@
 /**
  * This API endpoint initializes the database tables.
  * It relies on the `POSTGRES_URL` environment variable being present.
+ * 
+ * Config location: Vercel Project Settings > Environment Variables > POSTGRES_URL
+ * This variable is automatically added when you connect a Vercel Postgres store.
  */
 import { sql } from '@vercel/postgres';
 
 export default async function handler(request: Request) {
   try {
+    if (!process.env.POSTGRES_URL) {
+        return new Response(JSON.stringify({ error: 'POSTGRES_URL missing. Please connect database in Vercel Storage.' }), {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+        });
+    }
+
     // Create Users Table
     await sql`
       CREATE TABLE IF NOT EXISTS users (

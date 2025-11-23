@@ -238,7 +238,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                     <div className="mt-2 text-[10px] text-red-500 pl-6 border-t border-red-100 pt-1">
                                         <p>常见原因：</p>
                                         <ul className="list-disc pl-3 mt-0.5 space-y-0.5">
-                                            <li>数据库处于休眠 (Cold Start)，请等待几秒后重试</li>
+                                            <li>数据库休眠中 (Cold Start)，请等待10-30秒重试</li>
                                             <li>Vercel 项目未连接 Postgres 数据库</li>
                                             <li>Vercel 环境变量 POSTGRES_URL 丢失</li>
                                         </ul>
@@ -252,7 +252,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                 <div>
                                     <strong>哪里配置数据库？</strong>
                                     <p className="mt-1 text-blue-700/80">
-                                        数据库连接由 Vercel 环境变量 (<code className="bg-blue-100 px-1 rounded">POSTGRES_URL</code>) 自动管理，代码中无需手动配置。请前往 Vercel 控制台 &gt; Storage 检查连接状态。
+                                        无需在代码中配置。请前往 <a href="https://vercel.com" target="_blank" className="underline font-bold">Vercel 控制台</a> &gt; Storage 选项卡，点击 Connect Database (选择 Neon/Postgres)。连接成功后系统会自动注入 <code>POSTGRES_URL</code>。
                                     </p>
                                 </div>
                             </div>

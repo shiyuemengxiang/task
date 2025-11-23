@@ -43,6 +43,7 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
                  };
             }
             if (res.status === 500) {
+                 // Often happens if POSTGRES_URL is missing
                  return { 
                      success: false, 
                      message: '服务器内部错误 (500) - 请检查 Vercel 环境变量 POSTGRES_URL 是否已自动注入', 
@@ -73,7 +74,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 600
     } catch (error: any) {
         clearTimeout(id);
         if (error.name === 'AbortError') {
-            throw new Error('连接超时 (60秒) - 请检查网络或 Vercel 后台数据库状态 (POSTGRES_URL)');
+            throw new Error('连接超时 (60秒) - 数据库可能正在唤醒 (Cold Start) 或未配置 POSTGRES_URL。');
         }
         throw error;
     }
