@@ -1,7 +1,7 @@
-import { getDb } from './db';
+import { connectToDatabase } from './db';
 import { Task, Frequency, TaskHistory } from '../types';
 
-// --- Helper Logic ---
+// --- Helper Logic (Same as before) ---
 const needsReset = (task: Task): boolean => {
   const last = new Date(task.lastUpdated);
   const now = new Date();
@@ -83,20 +83,37 @@ const getDaysUntilDeadline = (task: Task): number | null => {
 
 export default async function handler(request: Request) {
   try {
-    const db = getDb();
+    const { db } = await connectToDatabase();
     
-    // 1. Fetch all users
-    const result = await db.sql`
-        SELECT u.username, u.webhook_url, d.tasks 
-        FROM users u 
-        LEFT JOIN user_data d ON u.username = d.username
-        WHERE d.tasks IS NOT NULL
-    `;
+    // 1. Fetch all users and their data using LookUp
+    const result = await db.collection('users').aggregate([
+        {
+            $lookup: {
+                from: "user_data",
+                localField: "username",
+                foreignField: "username",
+                as: "data"
+            }
+        },
+        {
+            $unwind: {
+                path: "$data",
+                preserveNullAndEmptyArrays: false // Only want users who have data
+            }
+        },
+        {
+            $project: {
+                username: 1,
+                webhook_url: 1,
+                tasks: "$data.tasks"
+            }
+        }
+    ]).toArray();
     
     const updates: Promise<any>[] = [];
     const logs: string[] = [];
 
-    for (const row of result.rows) {
+    for (const row of result) {
       let tasks: Task[] = row.tasks || [];
       let tasksChanged = false;
       const webhookUrl = row.webhook_url;
@@ -175,11 +192,12 @@ export default async function handler(request: Request) {
 
       // 3. Save
       if (tasksChanged) {
-          updates.push(db.sql`
-            UPDATE user_data 
-            SET tasks = ${JSON.stringify(tasks)}::jsonb, updated_at = NOW() 
-            WHERE username = ${row.username}
-          `);
+          updates.push(
+            db.collection('user_data').updateOne(
+                { username: row.username },
+                { $set: { tasks: tasks, updated_at: new Date() } }
+            )
+          );
       }
     }
 
@@ -187,7 +205,7 @@ export default async function handler(request: Request) {
 
     return new Response(JSON.stringify({ 
         success: true, 
-        processedUsers: result.rows.length, 
+        processedUsers: result.length, 
         updatesCount: updates.length,
         logs 
     }), { 

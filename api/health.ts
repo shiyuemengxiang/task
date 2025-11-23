@@ -1,33 +1,25 @@
-import { getDb } from './db';
+import { connectToDatabase } from './db';
 
 export default async function handler(request: Request) {
   const envStatus = {
-      POSTGRES_URL: !!process.env.POSTGRES_URL,
-      DATABASE_URL: !!process.env.DATABASE_URL,
+      MONGODB_URI: !!process.env.MONGODB_URI,
   };
 
   try {
-    // Attempt to get DB instance (might throw if config is missing)
-    const db = getDb();
     const start = Date.now();
+    const { db } = await connectToDatabase();
     
-    // 1. Connectivity Check (Simple Query)
-    await db.sql`SELECT 1`; 
+    // 1. Connectivity Check
+    await db.command({ ping: 1 });
     
-    // 2. Table Check
-    const tableCheck = await db.sql`
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = 'users'
-        );
-    `;
-    const tablesExist = tableCheck.rows[0].exists;
+    // 2. Collections Check
+    const collections = await db.listCollections().toArray();
+    const hasUsers = collections.some(c => c.name === 'users');
 
     return new Response(JSON.stringify({ 
         status: 'ok', 
         latency: Date.now() - start,
-        tablesExist,
+        tablesExist: hasUsers, // Reusing key for frontend compatibility
         env: envStatus
     }), { 
         status: 200,
@@ -40,10 +32,9 @@ export default async function handler(request: Request) {
       return new Response(JSON.stringify({ 
           status: 'error', 
           message: error.message || 'Unknown Database Error',
-          code: error.code,
           env: envStatus
       }), { 
-          status: 200, // Return 200 so client can parse JSON and show the error message
+          status: 200, 
           headers: { 'Content-Type': 'application/json' }
       });
   }

@@ -96,7 +96,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              if (data.status === 'ok' && !data.tablesExist) {
                   setAuthError({ 
                       success: false, 
-                      message: '数据库连接正常，但表未创建', 
+                      message: 'MongoDB连接正常，但未初始化索引', 
                       errorType: 'DB_NOT_INIT' 
                   });
              }
@@ -107,7 +107,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              
              // Parse Vercel Error ID if present
              if (text.includes("FUNCTION_INVOCATION_FAILED")) {
-                 errorMsg = "Server Error: FUNCTION_INVOCATION_FAILED. 可能是数据库连接串格式不兼容或依赖缺失。";
+                 errorMsg = "Server Error: FUNCTION_INVOCATION_FAILED. 可能是 MONGODB_URI 未配置或依赖缺失。";
              } else if (text.includes('<title>')) {
                  const match = text.match(/<title>(.*?)<\/title>/);
                  if (match) errorMsg = match[1];
@@ -140,7 +140,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
           }
 
           if (res.ok) {
-              alert('数据库初始化成功！请重新尝试登录或注册。');
+              alert('数据库索引初始化成功！请重新尝试登录或注册。');
               setAuthError(null);
               setHealthStatus(prev => prev ? { ...prev, tablesExist: true } : null);
               setShowDiagnostics(false);
@@ -223,7 +223,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                     <div className="relative">
                         <Lock className="absolute left-3 top-3.5 text-gray-400" size={18} />
                         <input 
-                            type={showPassword ? "text" : "password"}
+                            type={showPassword ? 'text' : 'password'}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="密码"
@@ -258,7 +258,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                         className="mt-2 w-full py-2 bg-red-100 text-red-700 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors flex items-center justify-center gap-2"
                                     >
                                         {isDbInitLoading ? <RefreshCw className="animate-spin" size={12} /> : <Database size={12} />}
-                                        点击初始化数据库
+                                        点击初始化索引 (MongoDB)
                                     </button>
                                 )}
 
@@ -316,15 +316,14 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                         
                         {!healthStatus ? (
                             <p className="text-[10px] text-gray-400">
-                                点击“重新检测”测试 API 与数据库的连通性。
+                                点击“重新检测”测试 API 与 MongoDB 的连通性。
                             </p>
                         ) : (
                             <div className="bg-gray-50 p-2 rounded-lg text-[10px] space-y-2">
                                 {/* Environment Check */}
                                 {healthStatus.env && (
                                     <div className="grid grid-cols-2 gap-1 text-[9px] font-mono border-b border-gray-200 pb-2">
-                                        <span className={healthStatus.env.POSTGRES_URL ? 'text-green-600' : 'text-gray-400'}>POSTGRES_URL: {healthStatus.env.POSTGRES_URL ? '✅' : '❌'}</span>
-                                        <span className={healthStatus.env.DATABASE_URL ? 'text-green-600' : 'text-gray-400'}>DATABASE_URL: {healthStatus.env.DATABASE_URL ? '✅' : '❌'}</span>
+                                        <span className={healthStatus.env.MONGODB_URI ? 'text-green-600' : 'text-gray-400'}>MONGODB_URI: {healthStatus.env.MONGODB_URI ? '✅' : '❌'}</span>
                                     </div>
                                 )}
 
@@ -337,7 +336,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                 </div>
                                 {healthStatus.status === 'ok' && (
                                     <div className="flex items-center justify-between">
-                                        <span>数据表:</span>
+                                        <span>集合(Tables):</span>
                                         {healthStatus.tablesExist 
                                             ? <span className="text-green-600">已就绪</span> 
                                             : <span className="text-orange-500 font-bold">未初始化</span>
@@ -360,7 +359,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                         disabled={isDbInitLoading}
                                         className="w-full mt-2 py-1.5 bg-blue-100 text-blue-700 font-bold rounded hover:bg-blue-200 transition-colors"
                                     >
-                                        立即初始化数据库
+                                        立即初始化索引
                                     </button>
                                 )}
                             </div>
@@ -471,7 +470,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
           </div>
           <div className="flex-1">
               <h3 className="text-sm font-bold text-gray-800">关于 Cyclic Pro</h3>
-              <p className="text-[10px] text-gray-400">版本 v2.5 (Stable Pg Driver)</p>
+              <p className="text-[10px] text-gray-400">版本 v2.5 (MongoDB Edition)</p>
           </div>
       </div>
     </div>

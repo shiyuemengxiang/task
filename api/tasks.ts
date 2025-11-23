@@ -1,4 +1,4 @@
-import { getDb } from './db';
+import { connectToDatabase } from './db';
 
 export default async function handler(request: Request) {
   const url = new URL(request.url);
@@ -12,14 +12,14 @@ export default async function handler(request: Request) {
   }
 
   try {
-    const db = getDb();
+    const { db } = await connectToDatabase();
 
     if (request.method === 'GET') {
-      const result = await db.sql`SELECT tasks FROM user_data WHERE username = ${username}`;
-      const tasks = result.rows[0]?.tasks || [];
+      const userData = await db.collection('user_data').findOne({ username });
+      const tasks = userData?.tasks || [];
       
-      const userResult = await db.sql`SELECT webhook_url FROM users WHERE username = ${username}`;
-      const webhookUrl = userResult.rows[0]?.webhook_url || '';
+      const user = await db.collection('users').findOne({ username });
+      const webhookUrl = user?.webhook_url || '';
 
       return new Response(JSON.stringify({ tasks, webhookUrl }), { 
         status: 200,
@@ -39,16 +39,20 @@ export default async function handler(request: Request) {
       }
       
       if (tasks) {
-        await db.sql`
-          INSERT INTO user_data (username, tasks, updated_at)
-          VALUES (${targetUser}, ${JSON.stringify(tasks)}::jsonb, NOW())
-          ON CONFLICT (username) 
-          DO UPDATE SET tasks = ${JSON.stringify(tasks)}::jsonb, updated_at = NOW();
-        `;
+        await db.collection('user_data').updateOne(
+            { username: targetUser },
+            { 
+                $set: { tasks, updated_at: new Date() } 
+            },
+            { upsert: true }
+        );
       }
 
       if (webhookUrl !== undefined) {
-         await db.sql`UPDATE users SET webhook_url = ${webhookUrl} WHERE username = ${targetUser}`;
+         await db.collection('users').updateOne(
+             { username: targetUser },
+             { $set: { webhook_url: webhookUrl } }
+         );
       }
 
       return new Response(JSON.stringify({ success: true }), { 
@@ -61,15 +65,6 @@ export default async function handler(request: Request) {
 
   } catch (error: any) {
     console.error("Tasks API Error", error);
-    if (error.code === '42P01') {
-         if (request.method === 'GET') {
-             return new Response(JSON.stringify({ tasks: [], webhookUrl: '' }), { 
-                status: 200,
-                headers: { 'Content-Type': 'application/json' }
-            });
-         }
-    }
-
     return new Response(JSON.stringify({ error: 'Database error', details: error.message }), { 
         status: 500,
         headers: { 'Content-Type': 'application/json' }
