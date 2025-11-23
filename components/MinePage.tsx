@@ -105,20 +105,21 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              const text = await res.text();
              let errorMsg = text;
              
-             // Try to extract the main error from HTML title or body if possible to be concise
-             if (text.includes('<title>')) {
+             // Parse Vercel Error ID if present
+             if (text.includes("FUNCTION_INVOCATION_FAILED")) {
+                 errorMsg = "Server Crash: Function Invocation Failed. (Check Vercel Logs)";
+             } else if (text.includes('<title>')) {
                  const match = text.match(/<title>(.*?)<\/title>/);
                  if (match) errorMsg = match[1];
              }
              
              setHealthStatus({ 
                  status: 'server_error', 
-                 message: `服务器错误 (${res.status}): ${errorMsg.substring(0, 300)}... (详情请查看控制台/Logs)` 
+                 message: `Server Error (${res.status}): ${errorMsg.substring(0, 150)}...` 
              });
-             console.error("Raw Health Check Error:", text);
           }
       } catch (e: any) {
-          setHealthStatus({ status: 'network_error', message: `无法连接到服务器 API: ${e.message}` });
+          setHealthStatus({ status: 'network_error', message: `Network Error: ${e.message}` });
       } finally {
           setHealthLoading(false);
       }
@@ -324,7 +325,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                     <div className="grid grid-cols-2 gap-1 text-[9px] font-mono border-b border-gray-200 pb-2">
                                         <span className={healthStatus.env.POSTGRES_URL ? 'text-green-600' : 'text-gray-400'}>POSTGRES_URL: {healthStatus.env.POSTGRES_URL ? '✅' : '❌'}</span>
                                         <span className={healthStatus.env.DATABASE_URL ? 'text-green-600' : 'text-gray-400'}>DATABASE_URL: {healthStatus.env.DATABASE_URL ? '✅' : '❌'}</span>
-                                        <span className={healthStatus.env.PRISMA_DATABASE_URL ? 'text-green-600' : 'text-gray-400'}>PRISMA_URL: {healthStatus.env.PRISMA_DATABASE_URL ? '✅' : '❌'}</span>
                                     </div>
                                 )}
 
@@ -471,7 +471,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
           </div>
           <div className="flex-1">
               <h3 className="text-sm font-bold text-gray-800">关于 Cyclic Pro</h3>
-              <p className="text-[10px] text-gray-400">版本 v2.3 (Native PG)</p>
+              <p className="text-[10px] text-gray-400">版本 v2.4 (Vercel SDK)</p>
           </div>
       </div>
     </div>
