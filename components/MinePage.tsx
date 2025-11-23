@@ -102,13 +102,11 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                   });
              }
           } else {
-             // Handle raw text/HTML response (often Vercel 500 error page or 504 Timeout)
              const text = await res.text();
              let errorMsg = text;
              
-             // Parse Vercel Error ID if present
              if (text.includes("FUNCTION_INVOCATION_FAILED")) {
-                 errorMsg = "Server Error: FUNCTION_INVOCATION_FAILED. 可能是 MONGODB_URI 配置错误或连接超时。";
+                 errorMsg = "Server Error: FUNCTION_INVOCATION_FAILED. 请检查 Vercel 日志。";
              } else if (text.includes('<title>')) {
                  const match = text.match(/<title>(.*?)<\/title>/);
                  if (match) errorMsg = match[1];
@@ -116,11 +114,12 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              
              setHealthStatus({ 
                  status: 'server_error', 
-                 message: `HTTP ${res.status}: ${errorMsg.substring(0, 150)}...` 
+                 message: `HTTP ${res.status}: ${errorMsg.substring(0, 150)}...`,
+                 debug: { HAS_URI: false, MONGO_KEYS: [] } 
              });
           }
       } catch (e: any) {
-          setHealthStatus({ status: 'network_error', message: `Network Error: ${e.message}` });
+          setHealthStatus({ status: 'network_error', message: `Network Error: ${e.message}`, debug: {} });
       } finally {
           setHealthLoading(false);
       }
@@ -130,20 +129,12 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       setIsDbInitLoading(true);
       try {
           const res = await fetch('/api/create-table');
-          const contentType = res.headers.get("content-type");
-          
-          let data;
-          if (contentType && contentType.includes("application/json")) {
-              data = await res.json();
-          } else {
-              const text = await res.text();
-              throw new Error(`Server Error (${res.status}): ${text.slice(0, 100)}`);
-          }
+          const data = await res.json();
 
           if (res.ok) {
               alert('数据库索引初始化成功！请重新尝试登录或注册。');
               setAuthError(null);
-              setHealthStatus(null); // Reset to force re-check
+              setHealthStatus(null);
               setShowDiagnostics(false);
           } else {
               alert(`初始化失败: ${data.message || JSON.stringify(data)}`);
@@ -250,7 +241,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                     </div>
                                 </div>
                                 
-                                {/* Initialize DB Button if specific error detected */}
                                 {authError.errorType === 'DB_NOT_INIT' && (
                                     <button 
                                         type="button"
@@ -263,7 +253,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                     </button>
                                 )}
 
-                                {/* Helper for missing config */}
                                 {(authError.errorType === 'DB_CONFIG_MISSING' || authError.errorType === 'NETWORK_ERROR') && (
                                     <div className="mt-2 text-[10px] text-red-500 pl-6 border-t border-red-100 pt-1">
                                         <p>提示：如果持续失败，请点击下方“连接诊断”。</p>
@@ -320,39 +309,37 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                 点击“重新检测”测试 API 与 MongoDB 的连通性。
                             </p>
                         ) : (
-                            <div className="bg-gray-50 p-2 rounded-lg text-[10px] space-y-2">
-                                {/* Environment Check */}
-                                {healthStatus.env && (
-                                    <div className="grid grid-cols-2 gap-1 text-[9px] font-mono border-b border-gray-200 pb-2">
-                                        <span className={healthStatus.env.MONGODB_URI_EXISTS ? 'text-green-600' : 'text-red-500 font-bold'}>
-                                            MONGODB_URI: {healthStatus.env.MONGODB_URI_EXISTS ? '✅' : '❌ (Missing)'}
+                            <div className="bg-gray-50 p-3 rounded-lg text-[10px] space-y-2 border border-gray-100">
+                                {/* Environment / Debug Info */}
+                                <div className="grid grid-cols-1 gap-1 font-mono text-gray-600 pb-2 border-b border-gray-200">
+                                    <div className="flex justify-between">
+                                        <span>Has URI:</span>
+                                        <span className={healthStatus.debug?.HAS_URI ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>
+                                            {healthStatus.debug?.HAS_URI ? 'YES' : 'NO'}
                                         </span>
-                                        <span className="text-gray-500">DB: {healthStatus.env.MONGODB_DB}</span>
                                     </div>
-                                )}
+                                    <div className="flex justify-between">
+                                        <span>URI Prefix:</span>
+                                        <span>{healthStatus.debug?.URI_PREFIX || 'N/A'}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Keys:</span>
+                                        <span className="truncate max-w-[150px]">{healthStatus.debug?.MONGO_KEYS?.join(',') || 'None'}</span>
+                                    </div>
+                                </div>
 
-                                <div className="flex items-center justify-between">
-                                    <span>连接状态:</span>
+                                <div className="flex items-center justify-between font-bold">
+                                    <span>Api Status:</span>
                                     {healthStatus.status === 'ok' 
-                                        ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> 成功 ({healthStatus.latency}ms)</span> 
-                                        : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> {healthStatus.stage === 'connection' ? '连接失败' : 'Ping失败'}</span>
+                                        ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> 正常</span> 
+                                        : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> 异常</span>
                                     }
                                 </div>
-                                
-                                {healthStatus.status === 'ok' && (
-                                    <div className="flex items-center justify-between">
-                                        <span>数据表(Collection):</span>
-                                        {healthStatus.tablesExist 
-                                            ? <span className="text-green-600">已就绪</span> 
-                                            : <span className="text-orange-500 font-bold">未初始化</span>
-                                        }
-                                    </div>
-                                )}
-                                
+
                                 {/* Error Message Display */}
-                                {healthStatus.message && healthStatus.status !== 'ok' && (
-                                    <div className="bg-red-100 p-2 rounded text-red-800 font-mono break-all leading-tight mt-2">
-                                        <strong>错误:</strong> {healthStatus.message}
+                                {healthStatus.message && (
+                                    <div className="bg-red-100 p-2 rounded text-red-800 font-mono break-all leading-tight mt-1 border border-red-200">
+                                        {healthStatus.message}
                                     </div>
                                 )}
                                 
@@ -382,7 +369,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       );
   }
 
-  // --- Render: Logged In View (Unchanged) ---
+  // --- Render: Logged In View ---
   return (
     <div className="px-5 pt-4 pb-24 animate-in slide-in-from-right-4 duration-300">
       {/* User Header */}

@@ -64,10 +64,12 @@ export default async function handler(request: Request) {
   } catch (error: any) {
     console.error("Auth API Error:", error);
 
+    // Pass the actual error message to the client for debugging
+    // In production, you might want to sanitize this, but for now we need to see why connection fails
     return new Response(JSON.stringify({ 
         success: false, 
-        message: `服务器错误: ${error.message}`,
-        errorType: 'UNKNOWN'
+        message: `DB Error: ${error.message}`,
+        errorType: 'DB_CONFIG_MISSING'
     }), { 
         status: 500,
         headers: { 'Content-Type': 'application/json' }
