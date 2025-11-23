@@ -36,10 +36,18 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
         } else {
             // Handle non-JSON responses (e.g., Vercel 500 HTML page or 404)
             if (res.status === 504) {
-                 return { success: false, message: '服务器响应超时 (请重试)', errorType: 'NETWORK_ERROR' };
+                 return { 
+                     success: false, 
+                     message: '服务器网关超时 (504) - 数据库响应过慢或未连接。请检查 Vercel Storage 配置。', 
+                     errorType: 'NETWORK_ERROR' 
+                 };
             }
             if (res.status === 500) {
-                 return { success: false, message: '服务器内部错误 (500) - 请检查数据库配置', errorType: 'UNKNOWN' };
+                 return { 
+                     success: false, 
+                     message: '服务器内部错误 (500) - 请检查 Vercel 环境变量 POSTGRES_URL 是否已自动注入', 
+                     errorType: 'DB_CONFIG_MISSING' 
+                 };
             }
             return { success: false, message: `服务连接错误 (状态码: ${res.status})`, errorType: 'NETWORK_ERROR' };
         }
@@ -65,7 +73,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 600
     } catch (error: any) {
         clearTimeout(id);
         if (error.name === 'AbortError') {
-            throw new Error('连接超时 - 服务器可能正在唤醒中，请耐心等待或重试');
+            throw new Error('连接超时 (60秒) - 请检查网络或 Vercel 后台数据库状态 (POSTGRES_URL)');
         }
         throw error;
     }

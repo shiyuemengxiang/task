@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BellRing, Save, Send, Info, LogOut, RefreshCw, Eye, EyeOff, Lock, User as UserIcon, CalendarCheck, Download, Database, AlertTriangle, Activity, CheckCircle2, XCircle } from 'lucide-react';
+import { BellRing, Save, Send, Info, LogOut, RefreshCw, Eye, EyeOff, Lock, User as UserIcon, CalendarCheck, Download, Database, AlertTriangle, Activity, CheckCircle2, XCircle, HelpCircle } from 'lucide-react';
 import { sendWebhook } from '../services/notificationService';
 import { getStorage } from '../services/storageAdapter';
 import { login, register, logout, getCurrentUser, User, AuthResult } from '../services/authService';
@@ -75,7 +75,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
         } else {
             setAuthError(result);
             // If it's a network error or DB error, automatically show diagnostics option
-            if (result.errorType === 'NETWORK_ERROR' || result.errorType === 'DB_NOT_INIT') {
+            if (result.errorType === 'NETWORK_ERROR' || result.errorType === 'DB_NOT_INIT' || result.errorType === 'DB_CONFIG_MISSING') {
                 setShowDiagnostics(true);
             }
         }
@@ -211,33 +211,51 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
 
                     {/* Error Display Area */}
                     {authError && (
-                        <div className="bg-red-50 p-3 rounded-lg border border-red-100 animate-in fade-in">
-                            <div className="flex items-start gap-2">
-                                <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={14} />
-                                <div className="text-xs text-red-600 font-medium break-all">
-                                    {authError.message}
+                        <div className="space-y-2 animate-in fade-in">
+                            <div className="bg-red-50 p-3 rounded-lg border border-red-100">
+                                <div className="flex items-start gap-2">
+                                    <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={14} />
+                                    <div className="text-xs text-red-600 font-medium break-all">
+                                        {authError.message}
+                                    </div>
                                 </div>
+                                
+                                {/* Initialize DB Button if specific error detected */}
+                                {authError.errorType === 'DB_NOT_INIT' && (
+                                    <button 
+                                        type="button"
+                                        onClick={handleInitDb}
+                                        disabled={isDbInitLoading}
+                                        className="mt-2 w-full py-2 bg-red-100 text-red-700 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        {isDbInitLoading ? <RefreshCw className="animate-spin" size={12} /> : <Database size={12} />}
+                                        点击初始化数据库
+                                    </button>
+                                )}
+
+                                {/* Helper for missing config */}
+                                {(authError.errorType === 'DB_CONFIG_MISSING' || authError.errorType === 'NETWORK_ERROR') && (
+                                    <div className="mt-2 text-[10px] text-red-500 pl-6 border-t border-red-100 pt-1">
+                                        <p>常见原因：</p>
+                                        <ul className="list-disc pl-3 mt-0.5 space-y-0.5">
+                                            <li>数据库处于休眠 (Cold Start)，请等待几秒后重试</li>
+                                            <li>Vercel 项目未连接 Postgres 数据库</li>
+                                            <li>Vercel 环境变量 POSTGRES_URL 丢失</li>
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
                             
-                            {/* Initialize DB Button if specific error detected */}
-                            {authError.errorType === 'DB_NOT_INIT' && (
-                                <button 
-                                    type="button"
-                                    onClick={handleInitDb}
-                                    disabled={isDbInitLoading}
-                                    className="mt-2 w-full py-2 bg-red-100 text-red-700 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors flex items-center justify-center gap-2"
-                                >
-                                    {isDbInitLoading ? <RefreshCw className="animate-spin" size={12} /> : <Database size={12} />}
-                                    点击初始化数据库
-                                </button>
-                            )}
-
-                             {/* Helper for missing config */}
-                             {authError.errorType === 'DB_CONFIG_MISSING' && (
-                                <div className="mt-2 text-[10px] text-red-500 pl-6">
-                                    请前往 Vercel 控制台 -&gt; Storage -&gt; Connect 绑定 Postgres 数据库并重新部署。
+                            {/* Proactive Config Hint */}
+                            <div className="p-3 bg-blue-50 text-blue-800 text-[10px] rounded-lg border border-blue-100 flex gap-2">
+                                <HelpCircle size={14} className="shrink-0 text-blue-500" />
+                                <div>
+                                    <strong>哪里配置数据库？</strong>
+                                    <p className="mt-1 text-blue-700/80">
+                                        数据库连接由 Vercel 环境变量 (<code className="bg-blue-100 px-1 rounded">POSTGRES_URL</code>) 自动管理，代码中无需手动配置。请前往 Vercel 控制台 &gt; Storage 检查连接状态。
+                                    </p>
                                 </div>
-                            )}
+                            </div>
                         </div>
                     )}
 
@@ -285,7 +303,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                         
                         {!healthStatus ? (
                             <p className="text-[10px] text-gray-400">
-                                如果一直显示超时，请点击检测以查看数据库连接状态。
+                                点击“重新检测”测试 API 与数据库的连通性。
                             </p>
                         ) : (
                             <div className="bg-gray-50 p-2 rounded-lg text-[10px] space-y-1">

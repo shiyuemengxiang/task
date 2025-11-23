@@ -1,3 +1,19 @@
+/**
+ * DATABASE CONFIGURATION NOTE:
+ * 
+ * This application uses @vercel/postgres. 
+ * Database credentials are NOT configured in this code.
+ * 
+ * Instead, they are automatically injected via the `POSTGRES_URL` environment variable
+ * when you connect a Postgres database in your Vercel Project Settings > Storage.
+ * 
+ * If you see connection errors:
+ * 1. Go to Vercel Dashboard -> Your Project -> Storage.
+ * 2. Ensure a Postgres database is connected.
+ * 3. Go to Settings -> Environment Variables and verify POSTGRES_URL exists.
+ * 4. Redeploy your application if you just connected the database.
+ */
+
 import { sql } from '@vercel/postgres';
 
 export default async function handler(request: Request) {
@@ -12,7 +28,7 @@ export default async function handler(request: Request) {
   if (!process.env.POSTGRES_URL) {
     return new Response(JSON.stringify({ 
         success: false, 
-        message: '系统配置错误: 未连接数据库 (Missing POSTGRES_URL)。请在 Vercel 控制台 Storage 选项卡中连接 Postgres 数据库。',
+        message: '系统配置错误: 未连接数据库 (环境变量 POSTGRES_URL 缺失)。请在 Vercel 控制台 Storage 选项卡中连接 Postgres 数据库。',
         errorType: 'DB_CONFIG_MISSING'
     }), { 
         status: 500,

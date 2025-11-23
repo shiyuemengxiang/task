@@ -1,3 +1,7 @@
+/**
+ * This API endpoint initializes the database tables.
+ * It relies on the `POSTGRES_URL` environment variable being present.
+ */
 import { sql } from '@vercel/postgres';
 
 export default async function handler(request: Request) {
