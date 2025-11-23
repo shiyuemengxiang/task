@@ -1,29 +1,65 @@
-import { createPool } from '@vercel/postgres';
+import { Pool } from 'pg';
 
-let pool: any = null;
+let pool: Pool | null = null;
+
+/**
+ * Helper to convert template literal arguments to Postgres parameterized query
+ * e.g. sql`SELECT * FROM users WHERE id = ${id}` 
+ * becomes text: "SELECT * FROM users WHERE id = $1", values: [id]
+ */
+const createQuery = (strings: TemplateStringsArray, values: any[]) => {
+    let text = '';
+    for (let i = 0; i < strings.length; i++) {
+        text += strings[i];
+        if (i < values.length) {
+            text += `$${i + 1}`;
+        }
+    }
+    return { text, values };
+};
 
 export const getDb = () => {
-    // Singleton pattern: reuse pool if already created
-    if (pool) return pool;
+    // Lazy initialization wrapper
+    // This prevents the function from crashing during module load if env vars are missing,
+    // and allows the error to be caught inside the specific API handler (e.g. health check).
+    
+    const initPool = () => {
+        if (pool) return pool;
+        
+        let connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL || process.env.PRISMA_DATABASE_URL || '';
+        
+        // CRITICAL FIX: Replace 'prisma+postgres://' with 'postgres://' to support standard drivers
+        if (connectionString.startsWith('prisma+postgres://')) {
+            connectionString = connectionString.replace('prisma+postgres://', 'postgres://');
+        }
+        
+        if (!connectionString) {
+            throw new Error("Database configuration missing. Please check POSTGRES_URL in Vercel settings.");
+        }
 
-    let connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL || process.env.PRISMA_DATABASE_URL;
+        // Initialize standard PG Pool
+        pool = new Pool({
+            connectionString,
+            ssl: { rejectUnauthorized: false }, // Required for Vercel Postgres / Neon
+            max: 1, // Limit connections for serverless
+            connectionTimeoutMillis: 15000, // Allow time for cold boot
+            idleTimeoutMillis: 30000
+        });
+        
+        pool.on('error', (err) => {
+            console.error('Unexpected error on idle client', err);
+            // Do not exit process
+        });
 
-    // CRITICAL FIX: The Vercel/Prisma integration sometimes injects 'prisma+postgres://' 
-    // which causes standard drivers to crash. We must replace it with 'postgres://'.
-    if (connectionString && connectionString.startsWith('prisma+postgres://')) {
-        connectionString = connectionString.replace('prisma+postgres://', 'postgres://');
-    }
+        return pool;
+    };
 
-    if (!connectionString) {
-        throw new Error("Database configuration missing. Please check POSTGRES_URL or DATABASE_URL in Vercel settings.");
-    }
-
-    // Initialize the pool using @vercel/postgres which handles serverless lifecycle correctly
-    pool = createPool({
-        connectionString,
-        ssl: { rejectUnauthorized: false }, // Robust SSL setting for cloud DBs
-        max: 1 // Keep max connections low for serverless
-    });
-
-    return pool;
+    return {
+        sql: async (strings: TemplateStringsArray, ...values: any[]) => {
+            const p = initPool();
+            const { text, values: params } = createQuery(strings, values);
+            // Return standard pg result. The calling code expects { rows: [...] } which pg provides.
+            return await p.query(text, params);
+        }
+    };
 };

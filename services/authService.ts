@@ -39,7 +39,7 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
             } else {
                 // Handle non-JSON errors (like Vercel 500 HTML page or raw text)
                 const text = await res.text();
-                console.error("Non-JSON API Error:", text.substring(0, 300)); 
+                console.error("Non-JSON API Error:", text.slice(0, 500)); 
 
                 // Check for common Vercel error codes/messages
                 if (res.status === 504) {
@@ -50,16 +50,15 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
                      };
                 }
                 
-                // Parse specific "FUNCTION_INVOCATION_FAILED" cleanly
                 if (text.includes("FUNCTION_INVOCATION_FAILED")) {
                     return {
                         success: false,
-                        message: "服务器启动失败 (Function Invocation Failed)。通常是数据库连接配置错误，请检查 POSTGRES_URL。",
+                        message: "Server Error: FUNCTION_INVOCATION_FAILED. 可能是数据库连接串格式不兼容或依赖缺失。",
                         errorType: 'DB_CONFIG_MISSING'
                     };
                 }
 
-                let cleanMsg = text.substring(0, 100);
+                let cleanMsg = text.slice(0, 200);
                 // Try to extract useful info from Vercel error page title
                 const titleMatch = text.match(/<title>(.*?)<\/title>/);
                 if (titleMatch) cleanMsg = titleMatch[1];

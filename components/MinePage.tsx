@@ -113,7 +113,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              
              setHealthStatus({ 
                  status: 'server_error', 
-                 message: `服务器错误 (${res.status}): ${errorMsg.substring(0, 100)}... (详情请查看控制台/Logs)` 
+                 message: `服务器错误 (${res.status}): ${errorMsg.substring(0, 300)}... (详情请查看控制台/Logs)` 
              });
              console.error("Raw Health Check Error:", text);
           }
@@ -471,7 +471,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
           </div>
           <div className="flex-1">
               <h3 className="text-sm font-bold text-gray-800">关于 Cyclic Pro</h3>
-              <p className="text-[10px] text-gray-400">版本 v2.2 (Singleton DB)</p>
+              <p className="text-[10px] text-gray-400">版本 v2.3 (Native PG)</p>
           </div>
       </div>
     </div>
