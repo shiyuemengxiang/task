@@ -21,6 +21,7 @@
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
+    "@types/pg": "^8.11.0",
     "@types/uuid": "^9.0.8",
     "@vitejs/plugin-react": "^4.2.1",
     "typescript": "^5.2.2",

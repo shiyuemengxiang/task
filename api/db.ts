@@ -1,45 +1,71 @@
-import { createPool } from '@vercel/postgres';
+import pg from 'pg';
+const { Pool } = pg;
 
-// Use a global variable to store the pool across hot reloads in development
-// and container reuse in production lambda environments.
-let pool: any;
+// Global pool instance for singleton pattern across lambda invocations
+let pool: pg.Pool | null = null;
+
+// Helper to reconstruct SQL template literals for pg driver
+// Matches the signature of @vercel/postgres db.sql: db.sql`SELECT * ...`
+const sqlWrapper = (poolInstance: pg.Pool) => {
+    return async (strings: TemplateStringsArray, ...values: any[]) => {
+        let text = '';
+        for (let i = 0; i < strings.length; i++) {
+            text += strings[i];
+            if (i < values.length) {
+                text += `$${i + 1}`;
+            }
+        }
+        return poolInstance.query(text, values);
+    };
+};
 
 export const getDb = () => {
-    if (pool) return pool;
+    if (pool) {
+        return {
+            sql: sqlWrapper(pool),
+            pool
+        };
+    }
 
     let url = process.env.POSTGRES_URL || process.env.DATABASE_URL || process.env.PRISMA_DATABASE_URL;
 
-    console.log("DB Init Check:", {
-        hasPostgresUrl: !!process.env.POSTGRES_URL,
-        hasDatabaseUrl: !!process.env.DATABASE_URL,
-        hasPrismaUrl: !!process.env.PRISMA_DATABASE_URL,
+    console.log("DB Init [Native PG]:", {
+        urlFound: !!url,
         urlPrefix: url ? url.split('://')[0] : 'none'
     });
 
     if (!url) {
-        // If no URL is found, we throw an error that will be caught by the API handlers.
-        // We do NOT return a pool here to prevent 'undefined' errors later.
         throw new Error("Database configuration missing. Please check POSTGRES_URL or DATABASE_URL in Vercel settings.");
     }
 
-    // FIX: Prisma Postgres uses 'prisma+postgres://' protocol which the standard pg driver does not understand.
-    // We must convert it to 'postgres://' for the @vercel/postgres (pg) driver to work.
+    // CRITICAL FIX: Replace prisma specific protocol which crashes standard drivers
     if (url.startsWith('prisma+postgres://')) {
         url = url.replace('prisma+postgres://', 'postgres://');
-        console.log("Converted prisma+postgres:// to postgres:// for driver compatibility.");
+        console.log("Protocol fixed: prisma+postgres -> postgres");
     }
 
-    // Create a pool with the found connection string
-    // We set a connectionTimeoutMillis to fail fast if the DB is sleeping or unreachable,
-    // avoiding the request hanging until Vercel kills it (504 Gateway Timeout).
-    pool = createPool({
-        connectionString: url,
-        ssl: {
-            rejectUnauthorized: false
-        },
-        connectionTimeoutMillis: 5000, // 5 seconds timeout
-        max: 1 // Keep max connections low for serverless
-    });
+    try {
+        pool = new Pool({
+            connectionString: url,
+            ssl: {
+                rejectUnauthorized: false // Necessary for many Vercel/Neon/Supabase connections
+            },
+            connectionTimeoutMillis: 5000, // Fail fast (5s) instead of hanging
+            idleTimeoutMillis: 10000, // Close idle clients quickly in serverless
+            max: 2 // Low max connections for serverless
+        });
 
-    return pool;
+        pool.on('error', (err) => {
+            console.error('Unexpected error on idle client', err);
+            // Don't exit, just log. Vercel will recycle the container eventually.
+        });
+
+        return {
+            sql: sqlWrapper(pool),
+            pool
+        };
+    } catch (e) {
+        console.error("Failed to initialize PG Pool:", e);
+        throw e;
+    }
 };

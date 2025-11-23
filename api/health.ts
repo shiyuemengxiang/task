@@ -8,15 +8,7 @@ export default async function handler(request: Request) {
   };
 
   try {
-    if (!envStatus.POSTGRES_URL && !envStatus.DATABASE_URL && !envStatus.PRISMA_DATABASE_URL) {
-       // Return 200 with error status so frontend can display details
-       return new Response(JSON.stringify({ 
-        status: 'config_error', 
-        message: 'No Environment Variables Found. Please add POSTGRES_URL or DATABASE_URL to Vercel Settings.',
-        env: envStatus
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
+    // Attempt to get DB instance (might throw if config is missing or malformed)
     const db = getDb();
     const start = Date.now();
     
@@ -47,6 +39,7 @@ export default async function handler(request: Request) {
       console.error('Health Check Error:', error);
       
       // Return 200 with error details to allow frontend to render the specific DB error
+      // instead of a generic 500 Internal Server Error page.
       return new Response(JSON.stringify({ 
           status: 'error', 
           message: error.message || 'Unknown Database Error',
@@ -54,7 +47,7 @@ export default async function handler(request: Request) {
           stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
           env: envStatus
       }), { 
-          status: 200,
+          status: 200, // Return 200 so client can parse JSON
           headers: { 'Content-Type': 'application/json' }
       });
   }

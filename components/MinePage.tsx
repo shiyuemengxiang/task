@@ -101,12 +101,21 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                   });
              }
           } else {
-             // Handle raw text/HTML response (often Vercel 500 error page)
+             // Handle raw text/HTML response (often Vercel 500 error page or 504 Timeout)
              const text = await res.text();
+             let errorMsg = text;
+             
+             // Try to extract the main error from HTML title or body if possible to be concise
+             if (text.includes('<title>')) {
+                 const match = text.match(/<title>(.*?)<\/title>/);
+                 if (match) errorMsg = match[1];
+             }
+             
              setHealthStatus({ 
                  status: 'server_error', 
-                 message: `服务器返回非 JSON 响应 (${res.status})。可能是函数崩溃。详情: ${text.substring(0, 150)}...` 
+                 message: `服务器错误 (${res.status}): ${errorMsg.substring(0, 100)}... (详情请查看控制台/Logs)` 
              });
+             console.error("Raw Health Check Error:", text);
           }
       } catch (e: any) {
           setHealthStatus({ status: 'network_error', message: `无法连接到服务器 API: ${e.message}` });
