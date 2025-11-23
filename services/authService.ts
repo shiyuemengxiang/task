@@ -25,6 +25,10 @@ const handleAuthResponse = async (res: Response): Promise<{ success: boolean; me
             return data;
         } else {
             // Handle non-JSON responses (e.g., Vercel 500 HTML page or 404)
+            // If the status is 200 but not JSON, something is very wrong (e.g. redirected to login page)
+            if (res.status === 200) {
+                 return { success: false, message: '响应格式错误 (可能是 Vercel 认证拦截)' };
+            }
             return { success: false, message: `服务连接错误 (状态码: ${res.status})` };
         }
     } catch (e) {
@@ -32,9 +36,31 @@ const handleAuthResponse = async (res: Response): Promise<{ success: boolean; me
     }
 };
 
+// Wrapper for fetch with timeout
+const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 15000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await fetch(url, { 
+            ...options, 
+            signal: controller.signal,
+            // Important for Vercel Deployment Protection
+            credentials: 'include' 
+        });
+        clearTimeout(id);
+        return response;
+    } catch (error: any) {
+        clearTimeout(id);
+        if (error.name === 'AbortError') {
+            throw new Error('请求超时，请检查网络或稍后重试');
+        }
+        throw error;
+    }
+};
+
 export const register = async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const res = await fetch('/api/auth', {
+    const res = await fetchWithTimeout('/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'register', username, password })
@@ -46,15 +72,15 @@ export const register = async (username: string, password: string): Promise<{ su
       setStorage(CURRENT_USER_KEY, { username });
     }
     return data;
-  } catch (e) {
+  } catch (e: any) {
     console.error("Register Error", e);
-    return { success: false, message: '网络请求失败，请检查网络连接' };
+    return { success: false, message: e.message || '网络请求失败，请检查网络连接' };
   }
 };
 
 export const login = async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const res = await fetch('/api/auth', {
+    const res = await fetchWithTimeout('/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'login', username, password })
@@ -66,9 +92,9 @@ export const login = async (username: string, password: string): Promise<{ succe
       setStorage(CURRENT_USER_KEY, { username });
     }
     return data;
-  } catch (e) {
+  } catch (e: any) {
     console.error("Login Error", e);
-    return { success: false, message: '网络请求失败，请检查网络连接' };
+    return { success: false, message: e.message || '网络请求失败，请检查网络连接' };
   }
 };
 

@@ -8,6 +8,17 @@ export default async function handler(request: Request) {
     });
   }
 
+  // Critical Check: Ensure Database is connected
+  if (!process.env.POSTGRES_URL) {
+    return new Response(JSON.stringify({ 
+        success: false, 
+        message: '系统配置错误: 未连接数据库 (Missing POSTGRES_URL)。请在 Vercel 控制台 Storage 选项卡中连接 Postgres 数据库。' 
+    }), { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
   try {
     const { action, username, password } = await request.json();
 
@@ -57,6 +68,7 @@ export default async function handler(request: Request) {
     // Self-Healing: If table does not exist (Postgres Error 42P01), try to create it and ask user to retry.
     if (error.code === '42P01') {
         try {
+            console.log("Tables missing, attempting creation...");
             await sql`
               CREATE TABLE IF NOT EXISTS users (
                 username VARCHAR(255) PRIMARY KEY,
@@ -72,19 +84,20 @@ export default async function handler(request: Request) {
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
               );
             `;
-            return new Response(JSON.stringify({ success: false, message: '数据库初始化完成，请再次点击按钮' }), { 
-                status: 200, // Return 200 so frontend handles it gracefully
+            return new Response(JSON.stringify({ success: false, message: '系统初始化完成，请再次点击登录/注册' }), { 
+                status: 200, // Return 200 so frontend handles it gracefully as a soft error
                 headers: { 'Content-Type': 'application/json' }
             });
-        } catch (initError) {
-             return new Response(JSON.stringify({ success: false, message: '数据库初始化失败' }), { 
+        } catch (initError: any) {
+             console.error("Table creation failed:", initError);
+             return new Response(JSON.stringify({ success: false, message: `数据库初始化失败: ${initError.message}` }), { 
                 status: 500,
                 headers: { 'Content-Type': 'application/json' }
             });
         }
     }
 
-    return new Response(JSON.stringify({ success: false, message: `服务器错误: ${error.message || 'Unknown'}` }), { 
+    return new Response(JSON.stringify({ success: false, message: `服务器错误: ${error.message || 'Unknown Error'}` }), { 
         status: 500,
         headers: { 'Content-Type': 'application/json' }
     });

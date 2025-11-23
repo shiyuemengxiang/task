@@ -124,6 +124,20 @@ export const getDaysUntilDeadline = (task: Task): number | null => {
 
 // --- Data Persistence Layer ---
 
+// Helper for fetch with timeout
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await fetch(url, { ...options, signal: controller.signal, credentials: 'include' });
+        clearTimeout(id);
+        return response;
+    } catch (error) {
+        clearTimeout(id);
+        throw error;
+    }
+};
+
 export const loadTasks = async (): Promise<Task[]> => {
   const user = getCurrentUser();
   let tasks: Task[] = [];
@@ -131,7 +145,7 @@ export const loadTasks = async (): Promise<Task[]> => {
   if (user) {
     // Cloud Mode
     try {
-        const res = await fetch(`/api/tasks?username=${encodeURIComponent(user.username)}`);
+        const res = await fetchWithTimeout(`/api/tasks?username=${encodeURIComponent(user.username)}`);
         if (res.ok) {
             const data = await res.json();
             tasks = data.tasks || [];
@@ -141,7 +155,6 @@ export const loadTasks = async (): Promise<Task[]> => {
             }
         } else {
             console.warn("Failed to fetch cloud tasks", res.status);
-            // On failure, maybe return empty or cached? For now empty to prevent sync conflicts.
             return [];
         }
     } catch (e) {
@@ -159,7 +172,6 @@ export const loadTasks = async (): Promise<Task[]> => {
   let hasChanges = false;
 
   // Optimistic Client-side Check for Cycle Resets
-  // Server-side Cron also does this, but client check ensures immediate update if user opens app before Cron runs.
   const updatedTasks = tasks.map((task: Task) => {
     if (!task.activityLog) task.activityLog = [];
 
@@ -196,7 +208,7 @@ export const saveTasks = async (tasks: Task[]) => {
   if (user) {
     // Cloud Save
     try {
-        await fetch('/api/tasks', {
+        await fetchWithTimeout('/api/tasks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -218,7 +230,7 @@ export const saveSettings = async (webhookUrl: string) => {
     const user = getCurrentUser();
     if (user) {
         try {
-            await fetch('/api/tasks', {
+            await fetchWithTimeout('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: user.username, webhookUrl })
