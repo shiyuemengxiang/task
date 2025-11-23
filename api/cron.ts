@@ -1,7 +1,7 @@
-import { connectToDatabase } from './db';
-import { Task, Frequency, TaskHistory } from '../types';
+import { connectToDatabase } from './db.js';
+import { Task, Frequency, TaskHistory } from '../types.js';
 
-// --- Helper Logic (Same as before) ---
+// --- Helper Logic ---
 const needsReset = (task: Task): boolean => {
   const last = new Date(task.lastUpdated);
   const now = new Date();
@@ -79,9 +79,8 @@ const getDaysUntilDeadline = (task: Task): number | null => {
   return null;
 };
 
-// --- API Handler ---
-
-export default async function handler(request: Request) {
+// --- API Handler (req, res) ---
+export default async function handler(req: any, res: any) {
   try {
     const { db } = await connectToDatabase();
     
@@ -98,7 +97,7 @@ export default async function handler(request: Request) {
         {
             $unwind: {
                 path: "$data",
-                preserveNullAndEmptyArrays: false // Only want users who have data
+                preserveNullAndEmptyArrays: false
             }
         },
         {
@@ -203,18 +202,15 @@ export default async function handler(request: Request) {
 
     await Promise.all(updates);
 
-    return new Response(JSON.stringify({ 
+    return res.status(200).json({ 
         success: true, 
         processedUsers: result.length, 
         updatesCount: updates.length,
         logs 
-    }), { 
-        status: 200, 
-        headers: { 'Content-Type': 'application/json' } 
     });
 
   } catch (error) {
       console.error("Cron Job Error:", error);
-      return new Response(JSON.stringify({ error: String(error) }), { status: 500 });
+      return res.status(500).json({ error: String(error) });
   }
 }
