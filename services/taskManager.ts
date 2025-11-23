@@ -8,13 +8,13 @@ const GUEST_STORAGE_KEY = 'cyclic_tasks_v1_guest';
 export type { Task };
 
 // --- Pure Logic Functions (Client Side) ---
+// These duplicate logic in api/cron.ts but are needed for optimistic UI updates
 
 const needsReset = (task: Task): boolean => {
   const last = new Date(task.lastUpdated);
   const now = new Date();
   const freq = task.frequency;
 
-  // Reset time portion for fair comparison
   last.setHours(0, 0, 0, 0);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -124,11 +124,6 @@ export const getDaysUntilDeadline = (task: Task): number | null => {
 
 // --- Data Persistence Layer ---
 
-/**
- * Loads tasks from API (if logged in) or LocalStorage (if guest).
- * Handles Cycle Resets on the client side for immediate feedback, 
- * although the Cron job also does this server-side.
- */
 export const loadTasks = async (): Promise<Task[]> => {
   const user = getCurrentUser();
   let tasks: Task[] = [];
@@ -136,7 +131,7 @@ export const loadTasks = async (): Promise<Task[]> => {
   if (user) {
     // Cloud Mode
     try {
-        const res = await fetch(`/api/tasks?username=${user.username}`);
+        const res = await fetch(`/api/tasks?username=${encodeURIComponent(user.username)}`);
         if (res.ok) {
             const data = await res.json();
             tasks = data.tasks || [];
@@ -144,11 +139,13 @@ export const loadTasks = async (): Promise<Task[]> => {
             if (data.webhookUrl) {
                 setStorage('cyclic_webhook_url', data.webhookUrl);
             }
+        } else {
+            console.warn("Failed to fetch cloud tasks", res.status);
+            // On failure, maybe return empty or cached? For now empty to prevent sync conflicts.
+            return [];
         }
     } catch (e) {
-        console.error("Failed to load cloud tasks", e);
-        // Fallback or empty? Better to return empty than confusing state, or cache.
-        // For now, return empty array on failure
+        console.error("Network error loading cloud tasks", e);
         return [];
     }
   } else {
@@ -161,7 +158,8 @@ export const loadTasks = async (): Promise<Task[]> => {
   const nowStr = new Date().toISOString();
   let hasChanges = false;
 
-  // Client-side Check for Cycle Resets (Optimistic UI update)
+  // Optimistic Client-side Check for Cycle Resets
+  // Server-side Cron also does this, but client check ensures immediate update if user opens app before Cron runs.
   const updatedTasks = tasks.map((task: Task) => {
     if (!task.activityLog) task.activityLog = [];
 
@@ -186,7 +184,6 @@ export const loadTasks = async (): Promise<Task[]> => {
   });
 
   if (hasChanges) {
-    // We don't await this save to avoid blocking UI, fire and forget
     saveTasks(updatedTasks);
   }
 
@@ -205,12 +202,10 @@ export const saveTasks = async (tasks: Task[]) => {
             body: JSON.stringify({ 
                 username: user.username,
                 tasks: tasks 
-                // webhookUrl is synced separately or via settings page
             })
         });
     } catch (e) {
         console.error("Cloud save failed", e);
-        // Queue for retry? (Out of scope for this version)
     }
   } else {
     // Guest Save
