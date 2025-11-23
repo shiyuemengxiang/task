@@ -107,7 +107,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              
              // Parse Vercel Error ID if present
              if (text.includes("FUNCTION_INVOCATION_FAILED")) {
-                 errorMsg = "Server Crash: Function Invocation Failed. (Check Vercel Logs)";
+                 errorMsg = "Server Error: FUNCTION_INVOCATION_FAILED. 可能是数据库连接串格式不兼容或依赖缺失。";
              } else if (text.includes('<title>')) {
                  const match = text.match(/<title>(.*?)<\/title>/);
                  if (match) errorMsg = match[1];
@@ -115,7 +115,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              
              setHealthStatus({ 
                  status: 'server_error', 
-                 message: `Server Error (${res.status}): ${errorMsg.substring(0, 150)}...` 
+                 message: `Server Error (${res.status}): ${errorMsg.substring(0, 200)}...` 
              });
           }
       } catch (e: any) {
@@ -348,7 +348,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                 {/* Raw Error Message Display */}
                                 {healthStatus.message && (
                                     <div className="bg-red-100 p-2 rounded text-red-800 font-mono break-all leading-tight">
-                                        <strong>Error:</strong> {healthStatus.message}
+                                        <strong>错误详情:</strong> {healthStatus.message}
                                     </div>
                                 )}
                                 
@@ -471,7 +471,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
           </div>
           <div className="flex-1">
               <h3 className="text-sm font-bold text-gray-800">关于 Cyclic Pro</h3>
-              <p className="text-[10px] text-gray-400">版本 v2.4 (Vercel SDK)</p>
+              <p className="text-[10px] text-gray-400">版本 v2.5 (Stable Pg Driver)</p>
           </div>
       </div>
     </div>
