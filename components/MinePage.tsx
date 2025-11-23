@@ -3,8 +3,7 @@ import { BellRing, Save, Send, Info, LogOut, RefreshCw, Eye, EyeOff, Lock, User 
 import { sendWebhook } from '../services/notificationService';
 import { getStorage } from '../services/storageAdapter';
 import { login, register, logout, getCurrentUser, User, AuthResult } from '../services/authService';
-import { loadTasks, saveSettings } from '../services/taskManager';
-import { downloadCalendarFile } from '../services/calendarService';
+import { saveSettings } from '../services/taskManager';
 
 interface MinePageProps {
     onUserChange?: () => void; // Callback to reload tasks in parent
@@ -24,7 +23,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
   
   // Health Check State
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [healthStatus, setHealthStatus] = useState<{status: string, message?: string, tablesExist?: boolean} | null>(null);
+  const [healthStatus, setHealthStatus] = useState<{status: string, message?: string, tablesExist?: boolean, env?: any} | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   
   // Settings State
@@ -88,6 +87,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       setHealthLoading(true);
       try {
           const res = await fetch('/api/health');
+          // Note: API now returns 200 even for errors to provide JSON details
           const data = await res.json();
           setHealthStatus(data);
           
@@ -99,7 +99,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
               });
           }
       } catch (e) {
-          setHealthStatus({ status: 'error', message: '无法连接到服务器 API' });
+          setHealthStatus({ status: 'network_error', message: '无法连接到服务器 API' });
       } finally {
           setHealthLoading(false);
       }
@@ -236,25 +236,9 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                 {/* Helper for missing config */}
                                 {(authError.errorType === 'DB_CONFIG_MISSING' || authError.errorType === 'NETWORK_ERROR') && (
                                     <div className="mt-2 text-[10px] text-red-500 pl-6 border-t border-red-100 pt-1">
-                                        <p>常见原因：</p>
-                                        <ul className="list-disc pl-3 mt-0.5 space-y-0.5">
-                                            <li>数据库休眠中 (Cold Start)，请等待10-30秒重试</li>
-                                            <li>Vercel 项目未连接 Postgres 数据库</li>
-                                            <li>Vercel 环境变量 POSTGRES_URL 丢失</li>
-                                        </ul>
+                                        <p>提示：如果持续失败，请点击下方“连接诊断”。</p>
                                     </div>
                                 )}
-                            </div>
-                            
-                            {/* Proactive Config Hint */}
-                            <div className="p-3 bg-blue-50 text-blue-800 text-[10px] rounded-lg border border-blue-100 flex gap-2">
-                                <HelpCircle size={14} className="shrink-0 text-blue-500" />
-                                <div>
-                                    <strong>哪里配置数据库？</strong>
-                                    <p className="mt-1 text-blue-700/80">
-                                        无需在代码中配置。请前往 <a href="https://vercel.com" target="_blank" className="underline font-bold">Vercel 控制台</a> &gt; Storage 选项卡，点击 Connect Database (选择 Neon/Postgres)。连接成功后系统会自动注入 <code>POSTGRES_URL</code>。
-                                    </p>
-                                </div>
                             </div>
                         </div>
                     )}
@@ -306,30 +290,41 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                 点击“重新检测”测试 API 与数据库的连通性。
                             </p>
                         ) : (
-                            <div className="bg-gray-50 p-2 rounded-lg text-[10px] space-y-1">
+                            <div className="bg-gray-50 p-2 rounded-lg text-[10px] space-y-2">
+                                {/* Environment Check */}
+                                {healthStatus.env && (
+                                    <div className="grid grid-cols-2 gap-1 text-[9px] font-mono border-b border-gray-200 pb-2">
+                                        <span className={healthStatus.env.POSTGRES_URL ? 'text-green-600' : 'text-gray-400'}>POSTGRES_URL: {healthStatus.env.POSTGRES_URL ? '✅' : '❌'}</span>
+                                        <span className={healthStatus.env.DATABASE_URL ? 'text-green-600' : 'text-gray-400'}>DATABASE_URL: {healthStatus.env.DATABASE_URL ? '✅' : '❌'}</span>
+                                        <span className={healthStatus.env.PRISMA_DATABASE_URL ? 'text-green-600' : 'text-gray-400'}>PRISMA_URL: {healthStatus.env.PRISMA_DATABASE_URL ? '✅' : '❌'}</span>
+                                    </div>
+                                )}
+
                                 <div className="flex items-center justify-between">
-                                    <span>API状态:</span>
+                                    <span>API/DB状态:</span>
                                     {healthStatus.status === 'ok' 
-                                        ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> 正常</span> 
-                                        : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> 异常</span>
+                                        ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> 连接成功</span> 
+                                        : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> 连接失败</span>
                                     }
                                 </div>
                                 {healthStatus.status === 'ok' && (
                                     <div className="flex items-center justify-between">
-                                        <span>数据库表:</span>
+                                        <span>数据表:</span>
                                         {healthStatus.tablesExist 
                                             ? <span className="text-green-600">已就绪</span> 
                                             : <span className="text-orange-500 font-bold">未初始化</span>
                                         }
                                     </div>
                                 )}
+                                
+                                {/* Raw Error Message Display */}
                                 {healthStatus.message && (
-                                    <div className="text-red-500 pt-1 border-t border-gray-100 mt-1">
-                                        {healthStatus.message}
+                                    <div className="bg-red-100 p-2 rounded text-red-800 font-mono break-all leading-tight">
+                                        <strong>Error:</strong> {healthStatus.message}
                                     </div>
                                 )}
                                 
-                                {/* Fallback Initialization Button inside Diagnostics */}
+                                {/* Fallback Initialization Button */}
                                 {healthStatus.status === 'ok' && !healthStatus.tablesExist && !authError?.errorType && (
                                      <button 
                                         type="button"
@@ -448,7 +443,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
           </div>
           <div className="flex-1">
               <h3 className="text-sm font-bold text-gray-800">关于 Cyclic Pro</h3>
-              <p className="text-[10px] text-gray-400">版本 v2.0 (Vercel Serverless Edition)</p>
+              <p className="text-[10px] text-gray-400">版本 v2.1 (Enhanced DB Support)</p>
           </div>
       </div>
     </div>
