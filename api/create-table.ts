@@ -1,23 +1,11 @@
-/**
- * This API endpoint initializes the database tables.
- * It relies on the `POSTGRES_URL` environment variable being present.
- * 
- * Config location: Vercel Project Settings > Environment Variables > POSTGRES_URL
- * This variable is automatically added when you connect a Vercel Postgres store.
- */
-import { sql } from '@vercel/postgres';
+import { getDb } from './db';
 
 export default async function handler(request: Request) {
   try {
-    if (!process.env.POSTGRES_URL) {
-        return new Response(JSON.stringify({ error: 'POSTGRES_URL missing. Please connect database in Vercel Storage.' }), {
-            status: 500,
-            headers: { 'content-type': 'application/json' },
-        });
-    }
+    const db = getDb(); // Will throw specific error if env vars are missing
 
     // Create Users Table
-    await sql`
+    await db.sql`
       CREATE TABLE IF NOT EXISTS users (
         username VARCHAR(255) PRIMARY KEY,
         password VARCHAR(255) NOT NULL,
@@ -27,7 +15,7 @@ export default async function handler(request: Request) {
     `;
 
     // Create Tasks Table (Storing tasks as a JSON blob for simplicity and flexibility)
-    await sql`
+    await db.sql`
       CREATE TABLE IF NOT EXISTS user_data (
         username VARCHAR(255) PRIMARY KEY REFERENCES users(username),
         tasks JSONB DEFAULT '[]'::jsonb,
@@ -39,8 +27,12 @@ export default async function handler(request: Request) {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
-  } catch (error) {
-    return new Response(JSON.stringify({ error }), {
+  } catch (error: any) {
+    console.error("Create Table Error:", error);
+    return new Response(JSON.stringify({ 
+        error: error.message || 'Unknown Error', 
+        details: 'Check Vercel Storage settings and ensure POSTGRES_URL or DATABASE_URL is correct.'
+    }), {
       status: 500,
       headers: { 'content-type': 'application/json' },
     });

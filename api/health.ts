@@ -1,20 +1,25 @@
-import { sql } from '@vercel/postgres';
+import { getDb } from './db';
 
 export default async function handler(request: Request) {
   try {
-    if (!process.env.POSTGRES_URL) {
+    const hasPostgres = !!process.env.POSTGRES_URL;
+    const hasDatabase = !!process.env.DATABASE_URL;
+    
+    if (!hasPostgres && !hasDatabase) {
        return new Response(JSON.stringify({ 
         status: 'error', 
-        message: 'Environment variable POSTGRES_URL is missing' 
+        message: 'Configuration Error: Both POSTGRES_URL and DATABASE_URL are missing.' 
       }), { status: 500 });
     }
 
+    const db = getDb();
     const start = Date.now();
+    
     // 1. Connectivity Check
-    await sql`SELECT 1`; 
+    await db.sql`SELECT 1`; 
     
     // 2. Table Check
-    const tableCheck = await sql`
+    const tableCheck = await db.sql`
         SELECT EXISTS (
             SELECT FROM information_schema.tables 
             WHERE table_schema = 'public' 
@@ -26,7 +31,8 @@ export default async function handler(request: Request) {
     return new Response(JSON.stringify({ 
         status: 'ok', 
         latency: Date.now() - start,
-        tablesExist 
+        tablesExist,
+        configSource: hasPostgres ? 'POSTGRES_URL' : 'DATABASE_URL'
     }), { 
         status: 200,
         headers: { 'Content-Type': 'application/json' }

@@ -1,11 +1,9 @@
-import { sql } from '@vercel/postgres';
+import { getDb } from './db';
 
 export default async function handler(request: Request) {
   const url = new URL(request.url);
   const username = url.searchParams.get('username');
 
-  // Simple auth check via username param for this demo level. 
-  // In production, use session tokens or JWT cookies.
   if (!username && request.method === 'GET') {
     return new Response(JSON.stringify({ error: 'Username required' }), { 
         status: 400,
@@ -14,11 +12,13 @@ export default async function handler(request: Request) {
   }
 
   try {
+    const db = getDb();
+
     if (request.method === 'GET') {
-      const result = await sql`SELECT tasks FROM user_data WHERE username = ${username}`;
+      const result = await db.sql`SELECT tasks FROM user_data WHERE username = ${username}`;
       const tasks = result.rows[0]?.tasks || [];
       
-      const userResult = await sql`SELECT webhook_url FROM users WHERE username = ${username}`;
+      const userResult = await db.sql`SELECT webhook_url FROM users WHERE username = ${username}`;
       const webhookUrl = userResult.rows[0]?.webhook_url || '';
 
       return new Response(JSON.stringify({ tasks, webhookUrl }), { 
@@ -38,9 +38,8 @@ export default async function handler(request: Request) {
           });
       }
       
-      // Update tasks
       if (tasks) {
-        await sql`
+        await db.sql`
           INSERT INTO user_data (username, tasks, updated_at)
           VALUES (${targetUser}, ${JSON.stringify(tasks)}::jsonb, NOW())
           ON CONFLICT (username) 
@@ -48,9 +47,8 @@ export default async function handler(request: Request) {
         `;
       }
 
-      // Update settings if provided
       if (webhookUrl !== undefined) {
-         await sql`UPDATE users SET webhook_url = ${webhookUrl} WHERE username = ${targetUser}`;
+         await db.sql`UPDATE users SET webhook_url = ${webhookUrl} WHERE username = ${targetUser}`;
       }
 
       return new Response(JSON.stringify({ success: true }), { 
@@ -63,7 +61,6 @@ export default async function handler(request: Request) {
 
   } catch (error: any) {
     console.error("Tasks API Error", error);
-    // If table doesn't exist, we return empty list for GET or fail gracefully
     if (error.code === '42P01') {
          if (request.method === 'GET') {
              return new Response(JSON.stringify({ tasks: [], webhookUrl: '' }), { 

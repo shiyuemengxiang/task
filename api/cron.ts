@@ -1,14 +1,12 @@
-import { sql } from '@vercel/postgres';
-import { Task, Frequency, TaskHistory, PushConfig } from '../types';
+import { getDb } from './db';
+import { Task, Frequency, TaskHistory } from '../types';
 
-// --- Helper Logic (Duplicated from client to avoid DOM dependencies in Serverless) ---
-
+// --- Helper Logic ---
 const needsReset = (task: Task): boolean => {
   const last = new Date(task.lastUpdated);
   const now = new Date();
   const freq = task.frequency;
 
-  // Normalize time to midnight for accurate day comparison
   last.setHours(0, 0, 0, 0);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -71,8 +69,7 @@ const getDaysUntilDeadline = (task: Task): number | null => {
     const diffTime = targetDate.getTime() - today.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }
-  
-  // Basic support for Yearly deadline calculation if needed
+
   if (task.frequency === Frequency.YEARLY && task.deadlineMonth && task.deadlineDay) {
       const targetDate = new Date(now.getFullYear(), task.deadlineMonth - 1, task.deadlineDay);
       const diffTime = targetDate.getTime() - today.getTime();
@@ -86,8 +83,10 @@ const getDaysUntilDeadline = (task: Task): number | null => {
 
 export default async function handler(request: Request) {
   try {
-    // 1. Fetch all users and their tasks
-    const result = await sql`
+    const db = getDb();
+    
+    // 1. Fetch all users
+    const result = await db.sql`
         SELECT u.username, u.webhook_url, d.tasks 
         FROM users u 
         LEFT JOIN user_data d ON u.username = d.username
@@ -104,14 +103,12 @@ export default async function handler(request: Request) {
       const nowStr = new Date().toISOString();
       const todayStr = nowStr.split('T')[0];
 
-      // 2. Iterate tasks to check for Resets and Notifications
+      // 2. Iterate tasks
       const updatedTasks = tasks.map(task => {
         let currentTask = { ...task };
-        
-        // ensure compatibility
         if (!currentTask.activityLog) currentTask.activityLog = []; 
         
-        // A. Check Cycle Reset
+        // A. Reset
         if (needsReset(currentTask)) {
             tasksChanged = true;
             const historyItem: TaskHistory = {
@@ -119,35 +116,26 @@ export default async function handler(request: Request) {
                 value: currentTask.currentValue,
                 completed: currentTask.currentValue >= currentTask.targetValue
             };
-            
-            // Reset logic
             currentTask.history = [...(currentTask.history || []), historyItem];
             currentTask.currentValue = 0;
             currentTask.lastUpdated = nowStr;
             currentTask.activityLog = [];
-            // Reset push status so we can push again for the new cycle
             if (currentTask.pushConfig) {
                 currentTask.pushConfig = { ...currentTask.pushConfig, lastPushDate: undefined };
             }
             logs.push(`[Reset] User: ${row.username}, Task: ${currentTask.title}`);
         }
-        
         return currentTask;
       });
 
-      // Update local reference for the next step (Notification)
       tasks = updatedTasks;
 
-      // B. Check Notifications
+      // B. Notifications
       if (webhookUrl) {
          for (let i = 0; i < tasks.length; i++) {
              const task = tasks[i];
              if (!task.pushConfig || !task.pushConfig.enabled) continue;
-             
-             // Don't notify if completed
              if (task.currentValue >= task.targetValue) continue;
-             
-             // Don't notify if already pushed today
              if (task.pushConfig.lastPushDate === todayStr) continue;
 
              const daysUntil = getDaysUntilDeadline(task);
@@ -161,12 +149,10 @@ export default async function handler(request: Request) {
                  const title = `任务提醒: ${task.title}`;
                  const body = `${msg} (进度: ${task.currentValue}/${task.targetValue})`;
                  
-                 // Construct URL
                  let finalUrl = webhookUrl
                     .replace('{title}', encodeURIComponent(title))
                     .replace('{body}', encodeURIComponent(body));
                  
-                 // Fallback if no placeholders
                  if (!webhookUrl.includes('{title}')) {
                     const separator = finalUrl.includes('?') ? '&' : '?';
                     finalUrl = `${finalUrl}${separator}title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
@@ -174,8 +160,6 @@ export default async function handler(request: Request) {
                  
                  try {
                      await fetch(finalUrl);
-                     
-                     // Update lastPushDate to avoid spamming
                      tasks[i] = {
                          ...task,
                          pushConfig: { ...task.pushConfig, lastPushDate: todayStr }
@@ -189,9 +173,9 @@ export default async function handler(request: Request) {
          }
       }
 
-      // 3. Save changes if any
+      // 3. Save
       if (tasksChanged) {
-          updates.push(sql`
+          updates.push(db.sql`
             UPDATE user_data 
             SET tasks = ${JSON.stringify(tasks)}::jsonb, updated_at = NOW() 
             WHERE username = ${row.username}

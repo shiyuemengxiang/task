@@ -24,7 +24,6 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
             const data = await res.json();
-            // Ensure we return a message even if the API didn't provide one
             if (!data.success && !data.message) {
                 return { 
                     success: false, 
@@ -34,19 +33,18 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
             }
             return data;
         } else {
-            // Handle non-JSON responses (e.g., Vercel 500 HTML page or 404)
+            // Handle Vercel system errors (500/504)
             if (res.status === 504) {
                  return { 
                      success: false, 
-                     message: '服务器网关超时 (504) - 数据库响应过慢或未连接。请检查 Vercel Storage 配置。', 
+                     message: '连接超时 (504) - 数据库唤醒中或连接配置有误。请等待1分钟后再试。', 
                      errorType: 'NETWORK_ERROR' 
                  };
             }
             if (res.status === 500) {
-                 // Often happens if POSTGRES_URL is missing
                  return { 
                      success: false, 
-                     message: '服务器内部错误 (500) - 请检查 Vercel 环境变量 POSTGRES_URL 是否已自动注入', 
+                     message: '服务器错误 (500) - 请检查 Vercel 环境变量。如果使用 Prisma Postgres，请确保 DATABASE_URL 已设置。', 
                      errorType: 'DB_CONFIG_MISSING' 
                  };
             }
@@ -58,7 +56,7 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
 };
 
 // Wrapper for fetch with timeout
-// Increased to 60s to allow for cold starts (database wake up) and slow networks
+// 60 seconds timeout to accommodate database cold starts
 const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 60000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
@@ -66,7 +64,6 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 600
         const response = await fetch(url, { 
             ...options, 
             signal: controller.signal,
-            // Important for Vercel Deployment Protection
             credentials: 'include' 
         });
         clearTimeout(id);
@@ -74,7 +71,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 600
     } catch (error: any) {
         clearTimeout(id);
         if (error.name === 'AbortError') {
-            throw new Error('连接超时 (60秒) - 数据库可能正在唤醒 (Cold Start) 或未配置 POSTGRES_URL。');
+            throw new Error('连接超时 (60秒) - 数据库可能正在唤醒。请检查 Vercel 的环境变量是否包含 DATABASE_URL 或 POSTGRES_URL。');
         }
         throw error;
     }

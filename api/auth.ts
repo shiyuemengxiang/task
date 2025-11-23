@@ -1,20 +1,4 @@
-/**
- * DATABASE CONFIGURATION NOTE:
- * 
- * This application uses @vercel/postgres. 
- * Database credentials are NOT configured in this code.
- * 
- * Instead, they are automatically injected via the `POSTGRES_URL` environment variable
- * when you connect a Postgres database in your Vercel Project Settings > Storage.
- * 
- * If you see connection errors:
- * 1. Go to Vercel Dashboard -> Your Project -> Storage.
- * 2. Ensure a Postgres database is connected.
- * 3. Go to Settings -> Environment Variables and verify POSTGRES_URL exists.
- * 4. Redeploy your application if you just connected the database.
- */
-
-import { sql } from '@vercel/postgres';
+import { getDb } from './db';
 
 export default async function handler(request: Request) {
   if (request.method !== 'POST') {
@@ -24,24 +8,13 @@ export default async function handler(request: Request) {
     });
   }
 
-  // Critical Check: Ensure Database is connected
-  if (!process.env.POSTGRES_URL) {
-    return new Response(JSON.stringify({ 
-        success: false, 
-        message: '系统配置错误: 未连接数据库 (环境变量 POSTGRES_URL 缺失)。请在 Vercel 控制台 Storage 选项卡中连接 Postgres 数据库。',
-        errorType: 'DB_CONFIG_MISSING'
-    }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
   try {
+    const db = getDb();
     const { action, username, password } = await request.json();
 
     if (action === 'register') {
       // Check existence
-      const existing = await sql`SELECT * FROM users WHERE username = ${username}`;
+      const existing = await db.sql`SELECT * FROM users WHERE username = ${username}`;
       if (existing.rows.length > 0) {
         return new Response(JSON.stringify({ success: false, message: '用户名已存在' }), { 
             status: 400,
@@ -50,9 +23,9 @@ export default async function handler(request: Request) {
       }
 
       // Insert User
-      await sql`INSERT INTO users (username, password) VALUES (${username}, ${password})`;
+      await db.sql`INSERT INTO users (username, password) VALUES (${username}, ${password})`;
       // Init Data
-      await sql`INSERT INTO user_data (username, tasks) VALUES (${username}, '[]'::jsonb)`;
+      await db.sql`INSERT INTO user_data (username, tasks) VALUES (${username}, '[]'::jsonb)`;
 
       return new Response(JSON.stringify({ success: true, message: '注册成功' }), { 
           status: 200,
@@ -61,7 +34,7 @@ export default async function handler(request: Request) {
     } 
     
     if (action === 'login') {
-      const user = await sql`SELECT * FROM users WHERE username = ${username} AND password = ${password}`;
+      const user = await db.sql`SELECT * FROM users WHERE username = ${username} AND password = ${password}`;
       if (user.rows.length === 0) {
         return new Response(JSON.stringify({ success: false, message: '用户名或密码错误' }), { 
             status: 401,
@@ -83,19 +56,22 @@ export default async function handler(request: Request) {
     console.error("Auth API Error:", error);
 
     // If table does not exist (Postgres Error 42P01)
-    // We return a specific error code so the Frontend can show an "Initialize DB" button
     if (error.code === '42P01') {
         return new Response(JSON.stringify({ 
             success: false, 
             message: '数据库表未初始化', 
             errorType: 'DB_NOT_INIT' 
         }), { 
-            status: 500, // Still an error, but typed
+            status: 500,
             headers: { 'Content-Type': 'application/json' }
         });
     }
 
-    return new Response(JSON.stringify({ success: false, message: `服务器错误: ${error.message || 'Unknown Error'}` }), { 
+    return new Response(JSON.stringify({ 
+        success: false, 
+        message: `服务器错误: ${error.message}`,
+        errorType: 'UNKNOWN'
+    }), { 
         status: 500,
         headers: { 'Content-Type': 'application/json' }
     });
