@@ -22,33 +22,46 @@ export const getCurrentUser = (): User | null => {
 const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
     try {
         const contentType = res.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-            const data = await res.json();
-            if (!data.success && !data.message) {
-                return { 
-                    success: false, 
-                    message: '操作失败 (服务器未返回具体原因)',
+        const isJson = contentType && contentType.includes("application/json");
+
+        if (res.ok) {
+            if (isJson) return await res.json();
+            return { success: true, message: '操作成功' };
+        } else {
+            // Handle Errors
+            if (isJson) {
+                const data = await res.json();
+                return {
+                    success: false,
+                    message: data.message || 'Unknown JSON Error',
                     errorType: data.errorType || 'UNKNOWN'
                 };
+            } else {
+                // Handle non-JSON errors (like Vercel 500 HTML page or raw text)
+                const text = await res.text();
+                console.error("Non-JSON API Error:", text.substring(0, 200)); // Log first 200 chars
+
+                if (res.status === 504) {
+                     return { 
+                         success: false, 
+                         message: '连接超时 (504) - 数据库唤醒中或连接配置有误。请等待1分钟后再试。', 
+                         errorType: 'NETWORK_ERROR' 
+                     };
+                }
+                if (res.status === 500) {
+                     // Check if it's the specific "FUNCTION_INVOCATION_FAILED" from Vercel logs
+                     return { 
+                         success: false, 
+                         message: `服务器内部错误 (500)。请检查 Vercel Logs。可能原因：数据库连接字符串格式不兼容 (如 prisma+postgres)。`, 
+                         errorType: 'DB_CONFIG_MISSING' 
+                     };
+                }
+                return { 
+                    success: false, 
+                    message: `服务器错误 (${res.status}): ${text.substring(0, 50) || 'No content'}`, 
+                    errorType: 'NETWORK_ERROR' 
+                };
             }
-            return data;
-        } else {
-            // Handle Vercel system errors (500/504)
-            if (res.status === 504) {
-                 return { 
-                     success: false, 
-                     message: '连接超时 (504) - 数据库唤醒中或连接配置有误。请等待1分钟后再试。', 
-                     errorType: 'NETWORK_ERROR' 
-                 };
-            }
-            if (res.status === 500) {
-                 return { 
-                     success: false, 
-                     message: '服务器错误 (500) - 请检查 Vercel 环境变量。如果使用 Prisma Postgres，请确保 DATABASE_URL 已设置。', 
-                     errorType: 'DB_CONFIG_MISSING' 
-                 };
-            }
-            return { success: false, message: `服务连接错误 (状态码: ${res.status})`, errorType: 'NETWORK_ERROR' };
         }
     } catch (e) {
         return { success: false, message: '解析响应失败', errorType: 'UNKNOWN' };
