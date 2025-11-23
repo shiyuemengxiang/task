@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Folder, FolderOpen, MoreVertical, Pencil, ChevronRight } from 'lucide-react';
+import { Folder, FolderOpen, MoreVertical, Pencil, GripVertical } from 'lucide-react';
 
 interface FolderCardProps {
   groupName: string;
@@ -9,6 +9,7 @@ interface FolderCardProps {
   progress: number;
   onClick: () => void;
   onRename: (newName: string) => void;
+  dragHandleProps?: any;
 }
 
 export const FolderCard: React.FC<FolderCardProps> = ({ 
@@ -18,7 +19,8 @@ export const FolderCard: React.FC<FolderCardProps> = ({
   pendingTasks,
   progress, 
   onClick,
-  onRename 
+  onRename,
+  dragHandleProps
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(groupName);
@@ -39,8 +41,20 @@ export const FolderCard: React.FC<FolderCardProps> = ({
         onClick={onClick}
     >
         <div className="flex justify-between items-start mb-4">
-            <div className={`p-3 rounded-xl ${progress === 100 ? 'bg-green-100 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                {progress === 100 ? <FolderOpen size={24} /> : <Folder size={24} />}
+            <div className="flex items-center gap-3">
+                 {/* Drag Handle */}
+                 {dragHandleProps && (
+                    <div 
+                        {...dragHandleProps} 
+                        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing p-1 -ml-2"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <GripVertical size={20} />
+                    </div>
+                 )}
+                <div className={`p-3 rounded-xl ${progress === 100 ? 'bg-green-100 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                    {progress === 100 ? <FolderOpen size={24} /> : <Folder size={24} />}
+                </div>
             </div>
             
             <div className="relative" onClick={e => e.stopPropagation()}>

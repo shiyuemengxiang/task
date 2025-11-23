@@ -2,16 +2,17 @@ import React, { useState } from 'react';
 import { Task, TaskType, Frequency } from '../types';
 import { ProgressBar } from './ProgressBar';
 import { getDaysUntilDeadline, checkRateLimit } from '../services/taskManager';
-import { CheckCircle2, Circle, Plus, Minus, History, Trash2, CalendarClock, Tag, Lock, Pencil } from 'lucide-react';
+import { CheckCircle2, Circle, Plus, Minus, History, Trash2, CalendarClock, Tag, Lock, Pencil, GripVertical } from 'lucide-react';
 
 interface TaskCardProps {
   task: Task;
   onUpdate: (id: string, newValue: number) => void;
   onDelete: (id: string) => void;
   onEdit: (task: Task) => void;
+  dragHandleProps?: any;
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, onUpdate, onDelete, onEdit }) => {
+export const TaskCard: React.FC<TaskCardProps> = ({ task, onUpdate, onDelete, onEdit, dragHandleProps }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [inputValue, setInputValue] = useState<string>('');
 
@@ -67,31 +68,43 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onUpdate, onDelete, on
       {/* Decorative bg blob */}
       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-gray-50 to-white rounded-bl-full -z-10 opacity-50"></div>
 
-      <div className="p-5">
-        <div className="flex justify-between items-start mb-3">
-            <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
-                    {frequencyLabel}
-                </span>
-                {task.group && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-1">
-                        <Tag size={8} />
-                        {task.group}
-                    </span>
+      <div className="p-5 pb-3">
+        <div className="flex justify-between items-start mb-2">
+            <div className="flex-1 flex items-start gap-2">
+                {/* Drag Handle */}
+                {dragHandleProps && (
+                    <div 
+                        {...dragHandleProps} 
+                        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing pt-1 -ml-1"
+                    >
+                        <GripVertical size={20} />
+                    </div>
                 )}
-                {deadlineText && !isDone && (
-                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1
-                        ${isUrgent ? 'bg-orange-100 text-orange-600 border-orange-200 animate-pulse' : ''}
-                        ${isOverdue ? 'bg-red-100 text-red-600 border-red-200' : 'bg-gray-50 text-gray-500 border-gray-100'}
-                    `}>
-                        <CalendarClock size={10} />
-                        {deadlineText}
-                    </span>
-                )}
-            </div>
-            <h3 className="text-lg font-bold text-gray-800 leading-tight">{task.title}</h3>
-            {task.description && <p className="text-sm text-gray-400 mt-1">{task.description}</p>}
+                
+                <div>
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                            {frequencyLabel}
+                        </span>
+                        {task.group && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-1">
+                                <Tag size={8} />
+                                {task.group}
+                            </span>
+                        )}
+                        {deadlineText && !isDone && (
+                            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1
+                                ${isUrgent ? 'bg-orange-100 text-orange-600 border-orange-200 animate-pulse' : ''}
+                                ${isOverdue ? 'bg-red-100 text-red-600 border-red-200' : 'bg-gray-50 text-gray-500 border-gray-100'}
+                            `}>
+                                <CalendarClock size={10} />
+                                {deadlineText}
+                            </span>
+                        )}
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-800 leading-tight">{task.title}</h3>
+                    {task.description && <p className="text-sm text-gray-400 mt-1">{task.description}</p>}
+                </div>
             </div>
             
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

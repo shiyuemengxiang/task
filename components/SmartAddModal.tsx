@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Sparkles, Loader2, Tag, ShieldAlert, ChevronDown, Bell } from 'lucide-react';
 import { Frequency, TaskType, CreateTaskPayload, LimitPeriod, Task } from '../types';
-import { parseTaskWithGemini } from '../services/geminiService';
+import { parseTaskWithGemini, isAiAvailable } from '../services/geminiService';
 
 interface SmartAddModalProps {
   isOpen: boolean;
@@ -99,6 +99,11 @@ export const SmartAddModal: React.FC<SmartAddModalProps> = ({
   if (!isOpen) return null;
 
   const handleAiSubmit = async () => {
+    if (!isAiAvailable()) {
+        alert("暂不支持自动识别");
+        return;
+    }
+
     if (!aiInput.trim()) return;
     setLoading(true);
     try {

@@ -66,6 +66,9 @@ export interface Task {
 
   // History (Previous cycles)
   history: TaskHistory[];
+
+  // Sorting
+  sortOrder?: number; // Ascending sort order index
 }
 
 export interface CreateTaskPayload {

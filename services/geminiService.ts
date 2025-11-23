@@ -6,6 +6,8 @@ declare const process: any;
 // NOTE: In a real app, this should be proxied through a backend to hide the key.
 const apiKey = process.env.API_KEY || '';
 
+export const isAiAvailable = () => !!apiKey;
+
 export const parseTaskWithGemini = async (input: string): Promise<CreateTaskPayload | null> => {
   if (!apiKey) {
     console.error("API Key missing");

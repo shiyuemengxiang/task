@@ -4,6 +4,7 @@ import { getCurrentUser } from './authService';
 
 // Base key for Guest mode
 const GUEST_STORAGE_KEY = 'cyclic_tasks_v1_guest';
+const GUEST_GROUP_ORDER_KEY = 'cyclic_group_order_v1_guest';
 
 export type { Task };
 
@@ -138,9 +139,10 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
     }
 };
 
-export const loadTasks = async (): Promise<Task[]> => {
+export const loadTasks = async (): Promise<{ tasks: Task[], groupOrder: string[] }> => {
   const user = getCurrentUser();
   let tasks: Task[] = [];
+  let groupOrder: string[] = [];
 
   if (user) {
     // Cloud Mode
@@ -149,24 +151,27 @@ export const loadTasks = async (): Promise<Task[]> => {
         if (res.ok) {
             const data = await res.json();
             tasks = data.tasks || [];
+            groupOrder = data.groupOrder || [];
             // Sync settings to local for fast access
             if (data.webhookUrl) {
                 setStorage('cyclic_webhook_url', data.webhookUrl);
             }
         } else {
             console.warn("Failed to fetch cloud tasks", res.status);
-            return [];
         }
     } catch (e) {
         console.error("Network error loading cloud tasks", e);
-        return [];
     }
   } else {
     // Guest Mode
     tasks = getStorage(GUEST_STORAGE_KEY) || [];
+    groupOrder = getStorage(GUEST_GROUP_ORDER_KEY) || [];
   }
   
-  if (!Array.isArray(tasks)) return [];
+  if (!Array.isArray(tasks)) tasks = [];
+
+  // Sort tasks by sortOrder, then fallback to creation time (mocked here as simple array order if undefined)
+  tasks.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
   const nowStr = new Date().toISOString();
   let hasChanges = false;
@@ -196,13 +201,13 @@ export const loadTasks = async (): Promise<Task[]> => {
   });
 
   if (hasChanges) {
-    saveTasks(updatedTasks);
+    saveTasks(updatedTasks, groupOrder);
   }
 
-  return updatedTasks;
+  return { tasks: updatedTasks, groupOrder };
 };
 
-export const saveTasks = async (tasks: Task[]) => {
+export const saveTasks = async (tasks: Task[], groupOrder?: string[]) => {
   const user = getCurrentUser();
   
   if (user) {
@@ -213,7 +218,8 @@ export const saveTasks = async (tasks: Task[]) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 username: user.username,
-                tasks: tasks 
+                tasks: tasks,
+                groupOrder: groupOrder 
             })
         });
     } catch (e) {
@@ -222,6 +228,9 @@ export const saveTasks = async (tasks: Task[]) => {
   } else {
     // Guest Save
     setStorage(GUEST_STORAGE_KEY, tasks);
+    if (groupOrder) {
+        setStorage(GUEST_GROUP_ORDER_KEY, groupOrder);
+    }
   }
 };
 
