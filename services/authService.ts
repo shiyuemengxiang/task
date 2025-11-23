@@ -36,7 +36,7 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
         } else {
             // Handle non-JSON responses (e.g., Vercel 500 HTML page or 404)
             if (res.status === 504) {
-                 return { success: false, message: '服务器响应超时 (Gateway Timeout)', errorType: 'NETWORK_ERROR' };
+                 return { success: false, message: '服务器响应超时 (请重试)', errorType: 'NETWORK_ERROR' };
             }
             if (res.status === 500) {
                  return { success: false, message: '服务器内部错误 (500) - 请检查数据库配置', errorType: 'UNKNOWN' };
@@ -49,8 +49,8 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
 };
 
 // Wrapper for fetch with timeout
-// Shortened to 15s to match Vercel Serverless Function limits on Hobby tier (10s) + buffer
-const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 15000) => {
+// Increased to 30s to allow for cold starts and slow networks
+const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 30000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
@@ -65,7 +65,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 150
     } catch (error: any) {
         clearTimeout(id);
         if (error.name === 'AbortError') {
-            throw new Error('请求超时 (超过15秒) - 数据库可能正在冷启动，请重试');
+            throw new Error('连接超时 (30秒) - 请检查网络或稍后再试');
         }
         throw error;
     }

@@ -125,7 +125,7 @@ export const getDaysUntilDeadline = (task: Task): number | null => {
 // --- Data Persistence Layer ---
 
 // Helper for fetch with timeout
-const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 20000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
