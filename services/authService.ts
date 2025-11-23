@@ -1,50 +1,60 @@
 import { getStorage, setStorage, removeStorage } from './storageAdapter';
 
-const USERS_KEY = 'cyclic_users_db';
 const CURRENT_USER_KEY = 'cyclic_current_user';
 
 export interface User {
   username: string;
-  password?: string; // In real app, this should be hashed. Storing plain text for demo only.
-  nickname?: string;
-  avatar?: string;
+  password?: string; // Kept for interface compatibility, but not stored locally
+  webhookUrl?: string;
 }
 
 export const getCurrentUser = (): User | null => {
   return getStorage(CURRENT_USER_KEY);
 };
 
-export const register = (username: string, password: string): { success: boolean; message: string } => {
-  const users = getStorage(USERS_KEY) || {};
-  
-  if (users[username]) {
-    return { success: false, message: '用户名已存在' };
+export const register = async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'register', username, password })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      setStorage(CURRENT_USER_KEY, { username });
+    }
+    return data;
+  } catch (e) {
+    console.error(e);
+    // Fallback for offline/guest logic if API fails? No, for registration we need API.
+    return { success: false, message: '注册失败: 网络错误或服务不可用' };
   }
-
-  const newUser: User = { username, password };
-  users[username] = newUser;
-  setStorage(USERS_KEY, users);
-  
-  // Auto login after register
-  setStorage(CURRENT_USER_KEY, { username });
-  
-  return { success: true, message: '注册成功' };
 };
 
-export const login = (username: string, password: string): { success: boolean; message: string } => {
-  const users = getStorage(USERS_KEY) || {};
-  const user = users[username];
-
-  if (!user || user.password !== password) {
-    return { success: false, message: '用户名或密码错误' };
+export const login = async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', username, password })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      setStorage(CURRENT_USER_KEY, { username });
+    }
+    return data;
+  } catch (e) {
+    console.error(e);
+    return { success: false, message: '登录失败: 网络错误' };
   }
-
-  setStorage(CURRENT_USER_KEY, { username: user.username });
-  return { success: true, message: '登录成功' };
 };
 
 export const logout = () => {
   removeStorage(CURRENT_USER_KEY);
+  // Optional: Clear local tasks cache if needed, but keeping them allows "Guest" usage to potentially see stale data or empty.
+  // Better to reload page or clear state in App.
 };
 
 export const isLoggedIn = (): boolean => {

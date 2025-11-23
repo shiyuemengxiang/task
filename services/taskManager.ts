@@ -2,23 +2,13 @@ import { Task, Frequency, TaskHistory, LimitPeriod } from '../types';
 import { getStorage, setStorage } from './storageAdapter';
 import { getCurrentUser } from './authService';
 
-// Base key
-const BASE_STORAGE_KEY = 'cyclic_tasks_v1';
-
-// Helper to get dynamic key based on current user
-const getStorageKey = () => {
-  const user = getCurrentUser();
-  if (user && user.username) {
-    return `${BASE_STORAGE_KEY}_${user.username}`;
-  }
-  return `${BASE_STORAGE_KEY}_guest`; // Default for guest/demo mode
-};
+// Base key for Guest mode
+const GUEST_STORAGE_KEY = 'cyclic_tasks_v1_guest';
 
 export type { Task };
 
-/**
- * Determines if a date is in a different cycle than the reference date
- */
+// --- Pure Logic Functions (Client Side) ---
+
 const needsReset = (task: Task): boolean => {
   const last = new Date(task.lastUpdated);
   const now = new Date();
@@ -34,7 +24,6 @@ const needsReset = (task: Task): boolean => {
   }
 
   if (freq === Frequency.WEEKLY) {
-    // Check if different ISO week or year
     const getWeek = (d: Date) => {
       const date = new Date(d.getTime());
       date.setHours(0, 0, 0, 0);
@@ -68,36 +57,23 @@ const needsReset = (task: Task): boolean => {
   return false;
 };
 
-/**
- * Check if the task is currently rate limited (e.g., "Done for today")
- */
 export const checkRateLimit = (task: Task): { allowed: boolean; nextAvailable?: string } => {
   if (!task.limitConfig || !task.activityLog) return { allowed: true };
 
   const now = new Date();
   const { period, count } = task.limitConfig;
-
   let countInPeriod = 0;
 
-  // Filter logs based on period
   task.activityLog.forEach(timestamp => {
     const logDate = new Date(timestamp);
-    
     if (period === LimitPeriod.DAILY) {
-      if (logDate.toDateString() === now.toDateString()) {
-        countInPeriod++;
-      }
+      if (logDate.toDateString() === now.toDateString()) countInPeriod++;
     } else if (period === LimitPeriod.WEEKLY) {
-       // Simple check: same week
        const diffTime = Math.abs(now.getTime() - logDate.getTime());
        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-       if (diffDays < 7 && now.getDay() >= logDate.getDay()) { // Rough estimation or same ISO week
-           countInPeriod++;
-       }
+       if (diffDays < 7 && now.getDay() >= logDate.getDay()) countInPeriod++;
     } else if (period === LimitPeriod.MONTHLY) {
-      if (logDate.getMonth() === now.getMonth() && logDate.getFullYear() === now.getFullYear()) {
-        countInPeriod++;
-      }
+      if (logDate.getMonth() === now.getMonth() && logDate.getFullYear() === now.getFullYear()) countInPeriod++;
     }
   });
 
@@ -114,12 +90,11 @@ export const checkRateLimit = (task: Task): { allowed: boolean; nextAvailable?: 
 
 export const getDaysUntilDeadline = (task: Task): number | null => {
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Clear time
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); 
   
   if (task.frequency === Frequency.DAILY) return 0;
 
   if (task.frequency === Frequency.WEEKLY && task.deadlineDay) {
-    // 1 = Mon, 7 = Sun
     const currentDay = now.getDay() === 0 ? 7 : now.getDay();
     let diff = task.deadlineDay - currentDay;
     if (diff < 0) diff += 7;
@@ -129,14 +104,10 @@ export const getDaysUntilDeadline = (task: Task): number | null => {
   if (task.frequency === Frequency.MONTHLY && task.deadlineDay) {
     let targetYear = now.getFullYear();
     let targetMonth = now.getMonth();
-    
     let targetDate = new Date(targetYear, targetMonth, task.deadlineDay);
     
-    // Handle month overflow (e.g. 31st)
     const maxDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-    if (task.deadlineDay > maxDay) {
-        targetDate = new Date(targetYear, targetMonth, maxDay);
-    }
+    if (task.deadlineDay > maxDay) targetDate = new Date(targetYear, targetMonth, maxDay);
 
     const diffTime = targetDate.getTime() - today.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -151,50 +122,114 @@ export const getDaysUntilDeadline = (task: Task): number | null => {
   return null;
 };
 
-export const loadTasks = (): Task[] => {
-  try {
-    const key = getStorageKey();
-    const tasks = getStorage(key);
-    
-    // If no tasks for this user yet, return empty array
-    if (!tasks || !Array.isArray(tasks)) return [];
-    
-    const nowStr = new Date().toISOString();
+// --- Data Persistence Layer ---
 
-    // Check for cycle resets on load
-    const updatedTasks = tasks.map((task: Task) => {
-      // Migration: ensure activityLog exists
-      if (!task.activityLog) task.activityLog = [];
+/**
+ * Loads tasks from API (if logged in) or LocalStorage (if guest).
+ * Handles Cycle Resets on the client side for immediate feedback, 
+ * although the Cron job also does this server-side.
+ */
+export const loadTasks = async (): Promise<Task[]> => {
+  const user = getCurrentUser();
+  let tasks: Task[] = [];
 
-      if (needsReset(task)) {
-        const historyItem: TaskHistory = {
-          date: task.lastUpdated,
-          value: task.currentValue,
-          completed: task.currentValue >= task.targetValue
-        };
-        
-        return {
-          ...task,
-          history: [...(task.history || []), historyItem],
-          currentValue: 0,
-          lastUpdated: nowStr,
-          activityLog: [], // Reset current cycle logs
-          pushConfig: task.pushConfig ? { ...task.pushConfig, lastPushDate: undefined } : undefined
-        };
-      }
-      return task;
-    });
+  if (user) {
+    // Cloud Mode
+    try {
+        const res = await fetch(`/api/tasks?username=${user.username}`);
+        if (res.ok) {
+            const data = await res.json();
+            tasks = data.tasks || [];
+            // Sync settings to local for fast access
+            if (data.webhookUrl) {
+                setStorage('cyclic_webhook_url', data.webhookUrl);
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load cloud tasks", e);
+        // Fallback or empty? Better to return empty than confusing state, or cache.
+        // For now, return empty array on failure
+        return [];
+    }
+  } else {
+    // Guest Mode
+    tasks = getStorage(GUEST_STORAGE_KEY) || [];
+  }
+  
+  if (!Array.isArray(tasks)) return [];
 
-    // Save if we modified anything
+  const nowStr = new Date().toISOString();
+  let hasChanges = false;
+
+  // Client-side Check for Cycle Resets (Optimistic UI update)
+  const updatedTasks = tasks.map((task: Task) => {
+    if (!task.activityLog) task.activityLog = [];
+
+    if (needsReset(task)) {
+      hasChanges = true;
+      const historyItem: TaskHistory = {
+        date: task.lastUpdated,
+        value: task.currentValue,
+        completed: task.currentValue >= task.targetValue
+      };
+      
+      return {
+        ...task,
+        history: [...(task.history || []), historyItem],
+        currentValue: 0,
+        lastUpdated: nowStr,
+        activityLog: [],
+        pushConfig: task.pushConfig ? { ...task.pushConfig, lastPushDate: undefined } : undefined
+      };
+    }
+    return task;
+  });
+
+  if (hasChanges) {
+    // We don't await this save to avoid blocking UI, fire and forget
     saveTasks(updatedTasks);
-    return updatedTasks;
-  } catch (e) {
-    console.error("Failed to load tasks", e);
-    return [];
+  }
+
+  return updatedTasks;
+};
+
+export const saveTasks = async (tasks: Task[]) => {
+  const user = getCurrentUser();
+  
+  if (user) {
+    // Cloud Save
+    try {
+        await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                username: user.username,
+                tasks: tasks 
+                // webhookUrl is synced separately or via settings page
+            })
+        });
+    } catch (e) {
+        console.error("Cloud save failed", e);
+        // Queue for retry? (Out of scope for this version)
+    }
+  } else {
+    // Guest Save
+    setStorage(GUEST_STORAGE_KEY, tasks);
   }
 };
 
-export const saveTasks = (tasks: Task[]) => {
-  const key = getStorageKey();
-  setStorage(key, tasks);
+export const saveSettings = async (webhookUrl: string) => {
+    setStorage('cyclic_webhook_url', webhookUrl);
+    const user = getCurrentUser();
+    if (user) {
+        try {
+            await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user.username, webhookUrl })
+            });
+        } catch (e) {
+            console.error("Settings sync failed", e);
+        }
+    }
 };

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BellRing, Save, Send, ShieldAlert, Info, UserCircle2, LogOut, RefreshCw, Eye, EyeOff, Lock, User as UserIcon } from 'lucide-react';
+import { BellRing, Save, Send, Info, LogOut, RefreshCw, Eye, EyeOff, Lock, User as UserIcon, CalendarCheck, Download } from 'lucide-react';
 import { sendWebhook } from '../services/notificationService';
-import { getStorage, setStorage } from '../services/storageAdapter';
+import { getStorage } from '../services/storageAdapter';
 import { login, register, logout, getCurrentUser, User } from '../services/authService';
+import { loadTasks, saveSettings } from '../services/taskManager';
+import { downloadCalendarFile } from '../services/calendarService';
 
 interface MinePageProps {
     onUserChange?: () => void; // Callback to reload tasks in parent
@@ -17,6 +19,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
   
   // Settings State
   const [webhookUrl, setWebhookUrl] = useState('');
@@ -25,22 +28,20 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    // Check login status
     const user = getCurrentUser();
     setCurrentUser(user);
-
-    // Load settings
     const url = getStorage('cyclic_webhook_url');
     if (url) setWebhookUrl(url);
   }, []);
 
-  const handleSave = () => {
-    setStorage('cyclic_webhook_url', webhookUrl);
+  const handleSave = async () => {
+    // Save to local and cloud
+    await saveSettings(webhookUrl);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!username || !password) {
           setAuthError('请输入用户名和密码');
@@ -48,24 +49,27 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       }
       
       setAuthError('');
+      setAuthLoading(true);
       
-      let result;
-      if (isLoginMode) {
-          result = login(username, password);
-      } else {
-          result = register(username, password);
-      }
+      try {
+        let result;
+        if (isLoginMode) {
+            result = await login(username, password);
+        } else {
+            result = await register(username, password);
+        }
 
-      if (result.success) {
-          const user = getCurrentUser();
-          setCurrentUser(user);
-          // Clear form
-          setUsername('');
-          setPassword('');
-          // Trigger data reload
-          if (onUserChange) onUserChange();
-      } else {
-          setAuthError(result.message);
+        if (result.success) {
+            const user = getCurrentUser();
+            setCurrentUser(user);
+            setUsername('');
+            setPassword('');
+            if (onUserChange) onUserChange();
+        } else {
+            setAuthError(result.message);
+        }
+      } finally {
+        setAuthLoading(false);
       }
   };
 
@@ -77,21 +81,28 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       }
   };
 
-  const handleSync = () => {
+  const handleSync = async () => {
       if (!currentUser) return;
       setSyncing(true);
-      // Simulate network request
-      setTimeout(() => {
+      try {
+          // Trigger a reload which implicitly saves first via App.tsx logic if needed, 
+          // or we can force a fetch.
+          if (onUserChange) {
+            await onUserChange();
+            alert('同步完成！');
+          }
+      } catch (e) {
+          alert('同步失败');
+      } finally {
           setSyncing(false);
-          alert('同步成功！(模拟环境：数据已隔离保存至本地)');
-      }, 1500);
+      }
   };
 
   const handleTestWebhook = async () => {
     if (!webhookUrl) return;
     setTesting(true);
     try {
-        const success = await sendWebhook(webhookUrl, "测试推送", "恭喜！配置成功，小程序(Web版)工作正常。");
+        const success = await sendWebhook(webhookUrl, "测试推送", "恭喜！配置成功，Vercel 后台调度服务将使用此地址进行推送。");
         if (success) {
             alert("发送成功！");
         } else {
@@ -102,6 +113,11 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
     } finally {
         setTesting(false);
     }
+  };
+
+  const handleExportCalendar = async () => {
+      const tasks = await loadTasks();
+      downloadCalendarFile(tasks);
   };
 
   // --- Render: Login / Register Form ---
@@ -156,9 +172,10 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
 
                     <button 
                         type="submit"
-                        className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 shadow-lg shadow-gray-200 transition-all active:scale-[0.98]"
+                        disabled={authLoading}
+                        className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 shadow-lg shadow-gray-200 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
                     >
-                        {isLoginMode ? '立即登录' : '注册账号'}
+                        {authLoading ? '处理中...' : (isLoginMode ? '立即登录' : '注册账号')}
                     </button>
                 </form>
 
@@ -178,7 +195,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                 
                 <div className="mt-12 text-center">
                    <p className="text-[10px] text-gray-300">
-                       游客模式下数据存储在本地，登录后可隔离数据。
+                       登录后数据将同步至云端数据库。未登录数据仅保存在本地。
                    </p>
                 </div>
             </div>
@@ -201,8 +218,8 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
             </div>
             <div className="flex-1">
                 <h2 className="text-lg font-bold text-gray-800">{currentUser.username}</h2>
-                <p className="text-xs text-gray-400 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-green-500 rounded-full"></span> 在线
+                <p className="text-xs text-green-500 flex items-center gap-1 font-medium">
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> 云端同步已开启
                 </p>
             </div>
             <button 
@@ -221,22 +238,21 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                 className="flex-1 py-2 bg-blue-50 text-blue-600 text-xs font-bold rounded-lg flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors"
             >
                 <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-                {syncing ? '同步中...' : '同步云端数据'}
+                {syncing ? '同步中...' : '手动刷新数据'}
             </button>
         </div>
       </div>
 
-      {/* Settings Group */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
          <div className="p-4 border-b border-gray-50 flex items-center gap-2">
             <BellRing size={18} className="text-blue-500" />
-            <span className="font-bold text-sm text-gray-800">消息推送配置</span>
+            <span className="font-bold text-sm text-gray-800">云端推送配置</span>
          </div>
          
          <div className="p-5 bg-gray-50/50">
             <div className="bg-blue-50 p-3 rounded-xl mb-4 border border-blue-100">
                 <p className="text-[10px] text-blue-700/80 leading-relaxed">
-                小程序环境限制：请使用 Webhook (如 Server酱/Bark) 接收提醒。配置对此设备上的该用户生效。
+                    <b>升级提示：</b> 您的任务现在由 Vercel 服务器每日自动检查。即使不打开网页，微信提醒也会准时送达。
                 </p>
             </div>
             
@@ -275,12 +291,12 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       </div>
 
       <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3">
-          <div className="p-2 bg-orange-50 text-orange-500 rounded-lg">
+          <div className="p-2 bg-gray-100 text-gray-500 rounded-lg">
             <Info size={18} />
           </div>
           <div className="flex-1">
-              <h3 className="text-sm font-bold text-gray-800">关于 Cyclic</h3>
-              <p className="text-[10px] text-gray-400">版本 v1.1.0 (Multi-User)</p>
+              <h3 className="text-sm font-bold text-gray-800">关于 Cyclic Pro</h3>
+              <p className="text-[10px] text-gray-400">版本 v2.0 (Vercel Serverless Edition)</p>
           </div>
       </div>
     </div>

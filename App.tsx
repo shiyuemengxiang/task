@@ -9,28 +9,31 @@ import { checkAndNotifyTasks } from './services/notificationService';
 import { TabBar, TabType } from './components/TabBar';
 import { MinePage } from './components/MinePage';
 import { v4 as uuidv4 } from 'uuid';
-import { ChevronLeft, Infinity } from 'lucide-react';
+import { ChevronLeft, Infinity, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('TASKS');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
 
-  // Function to load tasks (exposed so MinePage can trigger it)
-  const refreshTasks = () => {
-    const loaded = loadTasks();
+  // Async function to load tasks
+  const refreshTasks = async () => {
+    setLoading(true);
+    const loaded = await loadTasks();
     setTasks(loaded);
+    setLoading(false);
   };
 
   // Load tasks on mount
   useEffect(() => {
     refreshTasks();
     
-    // Initial webhook check
+    // Initial webhook check (Client side check for immediate feedback, server side Cron also handles this)
     const runPushCheck = async () => {
-        const loaded = loadTasks();
+        const loaded = await loadTasks();
         if (loaded.length > 0) {
             const updatedTasks = await checkAndNotifyTasks(loaded);
             const hasChanges = updatedTasks.some((t, i) => t.pushConfig?.lastPushDate !== loaded[i].pushConfig?.lastPushDate);
@@ -40,19 +43,17 @@ const App: React.FC = () => {
             }
         }
     };
-    setTimeout(runPushCheck, 2000);
+    // Delay slightly to let initial load finish or run in parallel
+    setTimeout(runPushCheck, 3000);
   }, []);
 
   // Persist tasks whenever they change
+  // Note: saveTasks is now async, but we don't need to await it here for UI responsiveness
   useEffect(() => {
-    // Only save if we have loaded data logic. 
-    // Note: loadTasks handles empty array returns. 
-    // We verify tasks length before saving to avoid overwriting with empty on initial render if load was slow (though here it's sync).
-    // Actually, for local storage sync, we can just save.
-    if (tasks) {
-      saveTasks(tasks);
+    if (!loading) {
+        saveTasks(tasks);
     }
-  }, [tasks]);
+  }, [tasks, loading]);
 
   const addTask = (payload: CreateTaskPayload) => {
     const newTask: Task = {
@@ -101,13 +102,7 @@ const App: React.FC = () => {
 
   const deleteTask = (id: string) => {
       if(window.confirm("确定要删除这个循环任务吗?")) {
-          setTasks(prev => {
-              const filtered = prev.filter(t => t.id !== id);
-              // We need to save immediately to storage here because set state is async 
-              // and if we switch tabs quickly it might not save? 
-              // Actually the useEffect [tasks] handles it.
-              return filtered;
-          });
+          setTasks(prev => prev.filter(t => t.id !== id));
       }
   }
 
@@ -121,7 +116,6 @@ const App: React.FC = () => {
       if (currentFolder === oldName) setCurrentFolder(newName);
   };
 
-  // Grouping Logic
   const groupedTasks = useMemo(() => {
       const groups: Record<string, Task[]> = {};
       tasks.forEach(t => {
@@ -152,10 +146,9 @@ const App: React.FC = () => {
           `}
       </style>
       
-      {/* Modern App Navigation Bar */}
+      {/* Navbar */}
       <div className="w-full bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-gray-100/50 h-[52px] flex items-center justify-center px-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all">
           {activeTab === 'TASKS' && currentFolder ? (
-            // Folder View Header with Back Button
             <div className="flex items-center w-full relative justify-center animate-in fade-in duration-200">
                 <button 
                     onClick={() => setCurrentFolder(null)}
@@ -167,7 +160,6 @@ const App: React.FC = () => {
                 <span className="font-bold text-lg text-gray-800 truncate max-w-[60%]">{currentFolder}</span>
             </div>
           ) : (
-            // Main Tab Header
              <div className="w-full flex items-center justify-center gap-2 animate-in fade-in duration-200">
                  {activeTab === 'TASKS' && <Infinity size={22} className="text-blue-600" strokeWidth={2.5} />}
                  <span className="font-bold text-lg text-gray-800 tracking-wide">
@@ -177,80 +169,84 @@ const App: React.FC = () => {
           )}
       </div>
 
-      {/* Main Content Area - Scrollable */}
       <main className="w-full max-w-md flex-1 overflow-y-auto pb-24 scrollbar-hide">
         
-        {/* Tab 1: Tasks / Folders */}
-        {activeTab === 'TASKS' && (
-            <div className="px-4 pt-4">
-                {!currentFolder ? (
-                    <div className="space-y-4">
-                         {Object.keys(groupedTasks).length === 0 ? (
-                             <div className="flex flex-col items-center justify-center py-24 text-gray-300 space-y-4">
-                                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
-                                     <Infinity size={32} className="text-gray-300" />
-                                 </div>
-                                 <p className="text-sm">
-                                     {tasks.length === 0 ? "点击 + 号创建任务" : "暂无文件夹"}
-                                 </p>
-                             </div>
-                         ) : (
-                            <div className="grid grid-cols-1 gap-3 pb-safe-bottom">
-                                {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
-                                    const completedCount = groupTasks.filter(t => t.currentValue >= t.targetValue).length;
-                                    const totalCount = groupTasks.length;
-                                    const pendingCount = totalCount - completedCount;
-                                    const groupProgress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+        {loading && activeTab !== 'ME' ? (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-400 gap-3">
+                <Loader2 className="animate-spin text-blue-500" size={32} />
+                <p className="text-xs">正在同步数据...</p>
+            </div>
+        ) : (
+            <>
+                {activeTab === 'TASKS' && (
+                    <div className="px-4 pt-4">
+                        {!currentFolder ? (
+                            <div className="space-y-4">
+                                {Object.keys(groupedTasks).length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-24 text-gray-300 space-y-4">
+                                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
+                                            <Infinity size={32} className="text-gray-300" />
+                                        </div>
+                                        <p className="text-sm">
+                                            {tasks.length === 0 ? "点击 + 号创建任务" : "暂无文件夹"}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 gap-3 pb-safe-bottom">
+                                        {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
+                                            const completedCount = groupTasks.filter(t => t.currentValue >= t.targetValue).length;
+                                            const totalCount = groupTasks.length;
+                                            const pendingCount = totalCount - completedCount;
+                                            const groupProgress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
-                                    return (
-                                        <FolderCard 
-                                            key={groupName}
-                                            groupName={groupName}
-                                            totalTasks={totalCount}
-                                            completedTasks={completedCount}
-                                            pendingTasks={pendingCount}
-                                            progress={groupProgress}
-                                            onClick={() => setCurrentFolder(groupName)}
-                                            onRename={(newName) => renameGroup(groupName, newName)}
-                                        />
-                                    );
-                                })}
+                                            return (
+                                                <FolderCard 
+                                                    key={groupName}
+                                                    groupName={groupName}
+                                                    totalTasks={totalCount}
+                                                    completedTasks={completedCount}
+                                                    pendingTasks={pendingCount}
+                                                    progress={groupProgress}
+                                                    onClick={() => setCurrentFolder(groupName)}
+                                                    onRename={(newName) => renameGroup(groupName, newName)}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
-                         )}
-                    </div>
-                ) : (
-                    <div className="space-y-3 animate-in slide-in-from-right-4 duration-300">
-                        {groupedTasks[currentFolder]?.map(task => (
-                            <TaskCard 
-                                key={task.id} 
-                                task={task} 
-                                onUpdate={updateTaskValue} 
-                                onDelete={deleteTask}
-                                onEdit={(t) => {
-                                    setEditingTask(t);
-                                    setIsModalOpen(true);
-                                }}
-                            />
-                        ))}
-                        {/* Empty state for folder */}
-                        {groupedTasks[currentFolder]?.length === 0 && (
-                            <div className="text-center py-12 text-gray-400 text-xs">
-                                此文件夹暂无任务
+                        ) : (
+                            <div className="space-y-3 animate-in slide-in-from-right-4 duration-300">
+                                {groupedTasks[currentFolder]?.map(task => (
+                                    <TaskCard 
+                                        key={task.id} 
+                                        task={task} 
+                                        onUpdate={updateTaskValue} 
+                                        onDelete={deleteTask}
+                                        onEdit={(t) => {
+                                            setEditingTask(t);
+                                            setIsModalOpen(true);
+                                        }}
+                                    />
+                                ))}
+                                {groupedTasks[currentFolder]?.length === 0 && (
+                                    <div className="text-center py-12 text-gray-400 text-xs">
+                                        此文件夹暂无任务
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
                 )}
-            </div>
+
+                {activeTab === 'CALENDAR' && (
+                    <div className="px-4 pt-4">
+                        <CalendarView tasks={tasks} />
+                    </div>
+                )}
+            </>
         )}
 
-        {/* Tab 2: Calendar */}
-        {activeTab === 'CALENDAR' && (
-            <div className="px-4 pt-4">
-                <CalendarView tasks={tasks} />
-            </div>
-        )}
-
-        {/* Tab 3: Me (Settings & Auth) */}
         {activeTab === 'ME' && (
             <MinePage onUserChange={refreshTasks} />
         )}
