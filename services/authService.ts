@@ -49,8 +49,8 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
 };
 
 // Wrapper for fetch with timeout
-// Increased to 30s to allow for cold starts and slow networks
-const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 30000) => {
+// Increased to 60s to allow for cold starts (database wake up) and slow networks
+const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 60000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
@@ -65,7 +65,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 300
     } catch (error: any) {
         clearTimeout(id);
         if (error.name === 'AbortError') {
-            throw new Error('连接超时 (30秒) - 请检查网络或稍后再试');
+            throw new Error('连接超时 - 服务器可能正在唤醒中，请耐心等待或重试');
         }
         throw error;
     }
