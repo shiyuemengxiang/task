@@ -12,7 +12,8 @@ export default async function handler(request: Request) {
   if (!process.env.POSTGRES_URL) {
     return new Response(JSON.stringify({ 
         success: false, 
-        message: '系统配置错误: 未连接数据库 (Missing POSTGRES_URL)。请在 Vercel 控制台 Storage 选项卡中连接 Postgres 数据库。' 
+        message: '系统配置错误: 未连接数据库 (Missing POSTGRES_URL)。请在 Vercel 控制台 Storage 选项卡中连接 Postgres 数据库。',
+        errorType: 'DB_CONFIG_MISSING'
     }), { 
         status: 500,
         headers: { 'Content-Type': 'application/json' }
@@ -65,36 +66,17 @@ export default async function handler(request: Request) {
   } catch (error: any) {
     console.error("Auth API Error:", error);
 
-    // Self-Healing: If table does not exist (Postgres Error 42P01), try to create it and ask user to retry.
+    // If table does not exist (Postgres Error 42P01)
+    // We return a specific error code so the Frontend can show an "Initialize DB" button
     if (error.code === '42P01') {
-        try {
-            console.log("Tables missing, attempting creation...");
-            await sql`
-              CREATE TABLE IF NOT EXISTS users (
-                username VARCHAR(255) PRIMARY KEY,
-                password VARCHAR(255) NOT NULL,
-                webhook_url TEXT,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-              );
-            `;
-            await sql`
-              CREATE TABLE IF NOT EXISTS user_data (
-                username VARCHAR(255) PRIMARY KEY REFERENCES users(username),
-                tasks JSONB DEFAULT '[]'::jsonb,
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-              );
-            `;
-            return new Response(JSON.stringify({ success: false, message: '系统初始化完成，请再次点击登录/注册' }), { 
-                status: 200, // Return 200 so frontend handles it gracefully as a soft error
-                headers: { 'Content-Type': 'application/json' }
-            });
-        } catch (initError: any) {
-             console.error("Table creation failed:", initError);
-             return new Response(JSON.stringify({ success: false, message: `数据库初始化失败: ${initError.message}` }), { 
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            });
-        }
+        return new Response(JSON.stringify({ 
+            success: false, 
+            message: '数据库表未初始化', 
+            errorType: 'DB_NOT_INIT' 
+        }), { 
+            status: 500, // Still an error, but typed
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 
     return new Response(JSON.stringify({ success: false, message: `服务器错误: ${error.message || 'Unknown Error'}` }), { 

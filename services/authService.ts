@@ -8,35 +8,48 @@ export interface User {
   webhookUrl?: string;
 }
 
+export interface AuthResult {
+    success: boolean;
+    message: string;
+    errorType?: 'DB_NOT_INIT' | 'NETWORK_ERROR' | 'UNKNOWN' | 'DB_CONFIG_MISSING';
+}
+
 export const getCurrentUser = (): User | null => {
   return getStorage(CURRENT_USER_KEY);
 };
 
 // Helper to safely parse response
-const handleAuthResponse = async (res: Response): Promise<{ success: boolean; message: string }> => {
+const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
     try {
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
             const data = await res.json();
             // Ensure we return a message even if the API didn't provide one
             if (!data.success && !data.message) {
-                return { success: false, message: '操作失败 (服务器未返回具体原因)' };
+                return { 
+                    success: false, 
+                    message: '操作失败 (服务器未返回具体原因)',
+                    errorType: data.errorType || 'UNKNOWN'
+                };
             }
             return data;
         } else {
             // Handle non-JSON responses (e.g., Vercel 500 HTML page or 404)
-            // If the status is 200 but not JSON, something is very wrong (e.g. redirected to login page)
-            if (res.status === 200) {
-                 return { success: false, message: '响应格式错误 (可能是 Vercel 认证拦截)' };
+            if (res.status === 504) {
+                 return { success: false, message: '服务器响应超时 (Gateway Timeout)', errorType: 'NETWORK_ERROR' };
             }
-            return { success: false, message: `服务连接错误 (状态码: ${res.status})` };
+            if (res.status === 500) {
+                 return { success: false, message: '服务器内部错误 (500) - 请检查数据库配置', errorType: 'UNKNOWN' };
+            }
+            return { success: false, message: `服务连接错误 (状态码: ${res.status})`, errorType: 'NETWORK_ERROR' };
         }
     } catch (e) {
-        return { success: false, message: '解析响应失败' };
+        return { success: false, message: '解析响应失败', errorType: 'UNKNOWN' };
     }
 };
 
 // Wrapper for fetch with timeout
+// Shortened to 15s to match Vercel Serverless Function limits on Hobby tier (10s) + buffer
 const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 15000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
@@ -52,13 +65,13 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 150
     } catch (error: any) {
         clearTimeout(id);
         if (error.name === 'AbortError') {
-            throw new Error('请求超时，请检查网络或稍后重试');
+            throw new Error('请求超时 (超过15秒) - 数据库可能正在冷启动，请重试');
         }
         throw error;
     }
 };
 
-export const register = async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
+export const register = async (username: string, password: string): Promise<AuthResult> => {
   try {
     const res = await fetchWithTimeout('/api/auth', {
       method: 'POST',
@@ -74,11 +87,11 @@ export const register = async (username: string, password: string): Promise<{ su
     return data;
   } catch (e: any) {
     console.error("Register Error", e);
-    return { success: false, message: e.message || '网络请求失败，请检查网络连接' };
+    return { success: false, message: e.message || '网络请求失败，请检查网络连接', errorType: 'NETWORK_ERROR' };
   }
 };
 
-export const login = async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
+export const login = async (username: string, password: string): Promise<AuthResult> => {
   try {
     const res = await fetchWithTimeout('/api/auth', {
       method: 'POST',
@@ -94,7 +107,7 @@ export const login = async (username: string, password: string): Promise<{ succe
     return data;
   } catch (e: any) {
     console.error("Login Error", e);
-    return { success: false, message: e.message || '网络请求失败，请检查网络连接' };
+    return { success: false, message: e.message || '网络请求失败，请检查网络连接', errorType: 'NETWORK_ERROR' };
   }
 };
 

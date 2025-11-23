@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { BellRing, Save, Send, Info, LogOut, RefreshCw, Eye, EyeOff, Lock, User as UserIcon, CalendarCheck, Download } from 'lucide-react';
+import { BellRing, Save, Send, Info, LogOut, RefreshCw, Eye, EyeOff, Lock, User as UserIcon, CalendarCheck, Download, Database, AlertTriangle, Activity, CheckCircle2, XCircle } from 'lucide-react';
 import { sendWebhook } from '../services/notificationService';
 import { getStorage } from '../services/storageAdapter';
-import { login, register, logout, getCurrentUser, User } from '../services/authService';
+import { login, register, logout, getCurrentUser, User, AuthResult } from '../services/authService';
 import { loadTasks, saveSettings } from '../services/taskManager';
 import { downloadCalendarFile } from '../services/calendarService';
 
@@ -18,8 +18,14 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthError] = useState<AuthResult | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [isDbInitLoading, setIsDbInitLoading] = useState(false);
+  
+  // Health Check State
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<{status: string, message?: string, tablesExist?: boolean} | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
   
   // Settings State
   const [webhookUrl, setWebhookUrl] = useState('');
@@ -44,15 +50,16 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
   const handleAuth = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!username || !password) {
-          setAuthError('请输入用户名和密码');
+          setAuthError({ success: false, message: '请输入用户名和密码', errorType: 'UNKNOWN' });
           return;
       }
       
-      setAuthError('');
+      setAuthError(null);
       setAuthLoading(true);
+      setShowDiagnostics(false);
       
       try {
-        let result;
+        let result: AuthResult;
         if (isLoginMode) {
             result = await login(username, password);
         } else {
@@ -66,10 +73,55 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
             setPassword('');
             if (onUserChange) onUserChange();
         } else {
-            setAuthError(result.message);
+            setAuthError(result);
+            // If it's a network error or DB error, automatically show diagnostics option
+            if (result.errorType === 'NETWORK_ERROR' || result.errorType === 'DB_NOT_INIT') {
+                setShowDiagnostics(true);
+            }
         }
       } finally {
         setAuthLoading(false);
+      }
+  };
+
+  const checkHealth = async () => {
+      setHealthLoading(true);
+      try {
+          const res = await fetch('/api/health');
+          const data = await res.json();
+          setHealthStatus(data);
+          
+          if (data.status === 'ok' && !data.tablesExist) {
+              setAuthError({ 
+                  success: false, 
+                  message: '数据库连接正常，但表未创建', 
+                  errorType: 'DB_NOT_INIT' 
+              });
+          }
+      } catch (e) {
+          setHealthStatus({ status: 'error', message: '无法连接到服务器 API' });
+      } finally {
+          setHealthLoading(false);
+      }
+  };
+
+  const handleInitDb = async () => {
+      setIsDbInitLoading(true);
+      try {
+          const res = await fetch('/api/create-table');
+          const data = await res.json();
+          if (res.ok) {
+              alert('数据库初始化成功！请重新尝试登录或注册。');
+              setAuthError(null);
+              setHealthStatus(prev => prev ? { ...prev, tablesExist: true } : null);
+              setShowDiagnostics(false);
+          } else {
+              alert(`初始化失败: ${JSON.stringify(data)}`);
+          }
+      } catch (e) {
+          alert('初始化请求失败，请检查网络');
+      } finally {
+          setIsDbInitLoading(false);
       }
   };
 
@@ -85,8 +137,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       if (!currentUser) return;
       setSyncing(true);
       try {
-          // Trigger a reload which implicitly saves first via App.tsx logic if needed, 
-          // or we can force a fetch.
           if (onUserChange) {
             await onUserChange();
             alert('同步完成！');
@@ -113,11 +163,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
     } finally {
         setTesting(false);
     }
-  };
-
-  const handleExportCalendar = async () => {
-      const tasks = await loadTasks();
-      downloadCalendarFile(tasks);
   };
 
   // --- Render: Login / Register Form ---
@@ -164,17 +209,44 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                         </button>
                     </div>
 
+                    {/* Error Display Area */}
                     {authError && (
-                        <div className="text-red-500 text-xs font-medium text-center bg-red-50 py-2 rounded-lg">
-                            {authError}
+                        <div className="bg-red-50 p-3 rounded-lg border border-red-100 animate-in fade-in">
+                            <div className="flex items-start gap-2">
+                                <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={14} />
+                                <div className="text-xs text-red-600 font-medium break-all">
+                                    {authError.message}
+                                </div>
+                            </div>
+                            
+                            {/* Initialize DB Button if specific error detected */}
+                            {authError.errorType === 'DB_NOT_INIT' && (
+                                <button 
+                                    type="button"
+                                    onClick={handleInitDb}
+                                    disabled={isDbInitLoading}
+                                    className="mt-2 w-full py-2 bg-red-100 text-red-700 text-xs font-bold rounded-lg hover:bg-red-200 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    {isDbInitLoading ? <RefreshCw className="animate-spin" size={12} /> : <Database size={12} />}
+                                    点击初始化数据库
+                                </button>
+                            )}
+
+                             {/* Helper for missing config */}
+                             {authError.errorType === 'DB_CONFIG_MISSING' && (
+                                <div className="mt-2 text-[10px] text-red-500 pl-6">
+                                    请前往 Vercel 控制台 -&gt; Storage -&gt; Connect 绑定 Postgres 数据库并重新部署。
+                                </div>
+                            )}
                         </div>
                     )}
 
                     <button 
                         type="submit"
                         disabled={authLoading}
-                        className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 shadow-lg shadow-gray-200 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+                        className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 shadow-lg shadow-gray-200 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex justify-center gap-2 items-center"
                     >
+                        {authLoading && <RefreshCw className="animate-spin" size={18} />}
                         {authLoading ? '处理中...' : (isLoginMode ? '立即登录' : '注册账号')}
                     </button>
                 </form>
@@ -183,7 +255,8 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                     <button 
                         onClick={() => {
                             setIsLoginMode(!isLoginMode);
-                            setAuthError('');
+                            setAuthError(null);
+                            setShowDiagnostics(false);
                             setUsername('');
                             setPassword('');
                         }}
@@ -192,6 +265,67 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                         {isLoginMode ? '没有账号？去注册' : '已有账号？去登录'}
                     </button>
                 </div>
+
+                {/* Diagnostics Section */}
+                {showDiagnostics && (
+                    <div className="mt-6 border-t border-gray-100 pt-4 animate-in fade-in">
+                        <div className="flex justify-between items-center mb-2">
+                             <h3 className="text-xs font-bold text-gray-500 flex items-center gap-1">
+                                 <Activity size={12} />
+                                 连接诊断
+                             </h3>
+                             <button 
+                                onClick={checkHealth}
+                                disabled={healthLoading}
+                                className="text-[10px] bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors"
+                             >
+                                 {healthLoading ? '检测中...' : '重新检测'}
+                             </button>
+                        </div>
+                        
+                        {!healthStatus ? (
+                            <p className="text-[10px] text-gray-400">
+                                如果一直显示超时，请点击检测以查看数据库连接状态。
+                            </p>
+                        ) : (
+                            <div className="bg-gray-50 p-2 rounded-lg text-[10px] space-y-1">
+                                <div className="flex items-center justify-between">
+                                    <span>API状态:</span>
+                                    {healthStatus.status === 'ok' 
+                                        ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> 正常</span> 
+                                        : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> 异常</span>
+                                    }
+                                </div>
+                                {healthStatus.status === 'ok' && (
+                                    <div className="flex items-center justify-between">
+                                        <span>数据库表:</span>
+                                        {healthStatus.tablesExist 
+                                            ? <span className="text-green-600">已就绪</span> 
+                                            : <span className="text-orange-500 font-bold">未初始化</span>
+                                        }
+                                    </div>
+                                )}
+                                {healthStatus.message && (
+                                    <div className="text-red-500 pt-1 border-t border-gray-100 mt-1">
+                                        {healthStatus.message}
+                                    </div>
+                                )}
+                                
+                                {/* Fallback Initialization Button inside Diagnostics */}
+                                {healthStatus.status === 'ok' && !healthStatus.tablesExist && !authError?.errorType && (
+                                     <button 
+                                        type="button"
+                                        onClick={handleInitDb}
+                                        disabled={isDbInitLoading}
+                                        className="w-full mt-2 py-1.5 bg-blue-100 text-blue-700 font-bold rounded hover:bg-blue-200 transition-colors"
+                                    >
+                                        立即初始化数据库
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
                 
                 <div className="mt-12 text-center">
                    <p className="text-[10px] text-gray-300">
