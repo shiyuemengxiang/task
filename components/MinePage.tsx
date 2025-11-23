@@ -6,7 +6,7 @@ import { login, register, logout, getCurrentUser, User, AuthResult } from '../se
 import { saveSettings } from '../services/taskManager';
 
 interface MinePageProps {
-    onUserChange?: () => void; // Callback to reload tasks in parent
+    onUserChange?: () => void;
 }
 
 export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
@@ -40,7 +40,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
   }, []);
 
   const handleSave = async () => {
-    // Save to local and cloud
     await saveSettings(webhookUrl);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -73,7 +72,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
             if (onUserChange) onUserChange();
         } else {
             setAuthError(result);
-            // If it's a network error or DB error, automatically show diagnostics option
             if (result.errorType === 'NETWORK_ERROR' || result.errorType === 'DB_NOT_INIT' || result.errorType === 'DB_CONFIG_MISSING') {
                 setShowDiagnostics(true);
             }
@@ -102,11 +100,12 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                   });
              }
           } else {
+             // Handle raw HTML/Text error (Server Crash)
              const text = await res.text();
              let errorMsg = text;
              
              if (text.includes("FUNCTION_INVOCATION_FAILED")) {
-                 errorMsg = "Server Error: FUNCTION_INVOCATION_FAILED. 代码执行崩溃，请检查 Vercel 日志。";
+                 errorMsg = "Critical Error: Function Invocation Failed. 数据库连接代码在启动时崩溃。";
              } else if (text.includes('<title>')) {
                  const match = text.match(/<title>(.*?)<\/title>/);
                  if (match) errorMsg = match[1];
@@ -114,8 +113,8 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              
              setHealthStatus({ 
                  status: 'server_crash', 
-                 message: `HTTP ${res.status}: ${errorMsg.substring(0, 150)}...`,
-                 debug: { NOTE: "Backend crashed without returning JSON debug info." } 
+                 message: `HTTP ${res.status}: ${errorMsg.substring(0, 200)}`,
+                 debug: { NOTE: "Backend crashed. No debug info available." } 
              });
           }
       } catch (e: any) {
@@ -186,7 +185,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
     }
   };
 
-  // --- Render: Login / Register Form ---
   if (!currentUser) {
       return (
         <div className="px-5 pt-12 pb-24 animate-in slide-in-from-bottom-4 duration-300 flex flex-col items-center justify-center min-h-[60vh]">
@@ -230,7 +228,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                         </button>
                     </div>
 
-                    {/* Error Display Area */}
                     {authError && (
                         <div className="space-y-2 animate-in fade-in">
                             <div className="bg-red-50 p-3 rounded-lg border border-red-100">
@@ -310,33 +307,38 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                             </p>
                         ) : (
                             <div className="bg-gray-50 p-3 rounded-lg text-[10px] space-y-2 border border-gray-100">
-                                {/* Environment / Debug Info */}
-                                {healthStatus.status !== 'server_crash' && (
-                                    <div className="grid grid-cols-1 gap-1 font-mono text-gray-600 pb-2 border-b border-gray-200">
-                                        <div className="flex justify-between">
-                                            <span>Has URI:</span>
-                                            <span className={healthStatus.debug?.HAS_URI ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>
-                                                {healthStatus.debug?.HAS_URI ? 'YES' : 'NO'}
-                                            </span>
+                                {healthStatus.status !== 'server_crash' ? (
+                                    <>
+                                        <div className="grid grid-cols-1 gap-1 font-mono text-gray-600 pb-2 border-b border-gray-200">
+                                            <div className="flex justify-between">
+                                                <span>Has URI:</span>
+                                                <span className={healthStatus.debug?.HAS_URI ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>
+                                                    {healthStatus.debug?.HAS_URI ? 'YES' : 'NO'}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>URI Prefix:</span>
+                                                <span>{healthStatus.debug?.URI_PREFIX || 'N/A'}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Keys Found:</span>
+                                                <span className="truncate max-w-[150px]">{healthStatus.debug?.AVAILABLE_KEYS?.join(', ') || 'None'}</span>
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between">
-                                            <span>URI Prefix:</span>
-                                            <span>{healthStatus.debug?.URI_PREFIX || 'N/A'}</span>
+                                        <div className="flex items-center justify-between font-bold mt-2">
+                                            <span>Result:</span>
+                                            {healthStatus.status === 'ok' 
+                                                ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> 正常</span> 
+                                                : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> {healthStatus.status}</span>
+                                            }
                                         </div>
-                                        <div className="flex justify-between">
-                                            <span>Avail Keys:</span>
-                                            <span className="truncate max-w-[150px]">{healthStatus.debug?.AVAILABLE_KEYS?.join(',') || 'None'}</span>
-                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex items-center gap-2 text-red-600 font-bold">
+                                        <AlertTriangle size={14} />
+                                        <span>服务器严重崩溃 (500)</span>
                                     </div>
                                 )}
-
-                                <div className="flex items-center justify-between font-bold">
-                                    <span>Result:</span>
-                                    {healthStatus.status === 'ok' 
-                                        ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> 正常</span> 
-                                        : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> {healthStatus.status}</span>
-                                    }
-                                </div>
 
                                 {/* Error Message Display */}
                                 {healthStatus.message && (
@@ -345,7 +347,6 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                                     </div>
                                 )}
                                 
-                                {/* Fallback Initialization Button */}
                                 {healthStatus.status === 'ok' && !healthStatus.tablesExist && !authError?.errorType && (
                                      <button 
                                         type="button"
@@ -371,10 +372,8 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       );
   }
 
-  // --- Render: Logged In View ---
   return (
     <div className="px-5 pt-4 pb-24 animate-in slide-in-from-right-4 duration-300">
-      {/* User Header */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 relative overflow-hidden group">
         <div className="absolute top-0 right-0 p-4 opacity-50">
             <div className="w-24 h-24 bg-blue-50 rounded-full -mr-10 -mt-10"></div>
