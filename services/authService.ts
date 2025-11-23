@@ -39,26 +39,34 @@ const handleAuthResponse = async (res: Response): Promise<AuthResult> => {
             } else {
                 // Handle non-JSON errors (like Vercel 500 HTML page or raw text)
                 const text = await res.text();
-                console.error("Non-JSON API Error:", text.substring(0, 200)); // Log first 200 chars
+                console.error("Non-JSON API Error:", text.substring(0, 300)); 
 
+                // Check for common Vercel error codes/messages
                 if (res.status === 504) {
                      return { 
                          success: false, 
-                         message: '连接超时 (504) - 数据库唤醒中或连接配置有误。请等待1分钟后再试。', 
+                         message: '连接超时 (504) - 数据库可能正在休眠，请1分钟后重试。', 
                          errorType: 'NETWORK_ERROR' 
                      };
                 }
-                if (res.status === 500) {
-                     // Check if it's the specific "FUNCTION_INVOCATION_FAILED" from Vercel logs
-                     return { 
-                         success: false, 
-                         message: `服务器内部错误 (500)。请检查 Vercel Logs。可能原因：数据库连接字符串格式不兼容 (如 prisma+postgres)。`, 
-                         errorType: 'DB_CONFIG_MISSING' 
-                     };
+                
+                // Parse specific "FUNCTION_INVOCATION_FAILED" cleanly
+                if (text.includes("FUNCTION_INVOCATION_FAILED")) {
+                    return {
+                        success: false,
+                        message: "服务器启动失败 (Function Invocation Failed)。通常是数据库连接配置错误，请检查 POSTGRES_URL。",
+                        errorType: 'DB_CONFIG_MISSING'
+                    };
                 }
+
+                let cleanMsg = text.substring(0, 100);
+                // Try to extract useful info from Vercel error page title
+                const titleMatch = text.match(/<title>(.*?)<\/title>/);
+                if (titleMatch) cleanMsg = titleMatch[1];
+
                 return { 
                     success: false, 
-                    message: `服务器错误 (${res.status}): ${text.substring(0, 50) || 'No content'}`, 
+                    message: `服务器错误 (${res.status}): ${cleanMsg}`, 
                     errorType: 'NETWORK_ERROR' 
                 };
             }
