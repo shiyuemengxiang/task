@@ -84,7 +84,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ tasks }) => {
   const blanks = Array.from({ length: startingEmptyDays }, (_, i) => i);
 
   return (
-    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 animate-in fade-in zoom-in-95 duration-300 relative">
+    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 animate-in fade-in zoom-in-95 duration-300 relative overflow-hidden">
       <div className="flex justify-between items-center mb-6">
         <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <ChevronLeft size={20} className="text-gray-600" />
@@ -158,52 +158,62 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ tasks }) => {
 
       {/* Modal for Day Details */}
       {selectedDay && (
-          <div className="absolute inset-0 z-20 flex items-end sm:items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4">
+              {/* Backdrop - Darker and clearer blur */}
               <div 
-                className="absolute inset-0 bg-black/10 backdrop-blur-[1px] rounded-3xl pointer-events-auto"
-                onClick={() => setSelectedDay(null)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-all"
+                onClick={(e) => { e.stopPropagation(); setSelectedDay(null); }}
               ></div>
-              <div className="bg-white w-full m-4 p-4 rounded-2xl shadow-xl border border-gray-100 animate-in slide-in-from-bottom-4 pointer-events-auto max-h-[300px] flex flex-col">
-                  <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-50">
-                      <div className="flex items-center gap-2 text-blue-600">
-                          <Calendar size={18} />
-                          <span className="font-bold text-sm">
-                              {selectedDay.date.getMonth() + 1}月{selectedDay.date.getDate()}日
-                          </span>
+              
+              {/* Content Card - Higher contrast, no transparency issues */}
+              <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl ring-1 ring-gray-100 relative z-10 animate-in zoom-in-95 fade-in duration-200 flex flex-col max-h-[80%]">
+                  {/* Header */}
+                  <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gray-50/50 rounded-t-2xl">
+                      <div className="flex items-center gap-2">
+                          <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                             <span className="text-lg font-bold leading-none">{selectedDay.date.getDate()}</span>
+                          </div>
+                          <div className="flex flex-col">
+                              <span className="text-xs font-bold text-gray-400 uppercase">{selectedDay.date.getMonth() + 1}月</span>
+                              <span className="text-xs font-bold text-gray-800">
+                                  {['周日', '周一', '周二', '周三', '周四', '周五', '周六'][selectedDay.date.getDay()]}
+                              </span>
+                          </div>
                       </div>
                       <button 
                         onClick={() => setSelectedDay(null)}
-                        className="p-1 text-gray-400 hover:text-gray-600 bg-gray-50 rounded-full"
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
                       >
-                          <X size={16} />
+                          <X size={18} />
                       </button>
                   </div>
                   
-                  <div className="overflow-y-auto scrollbar-hide space-y-4">
+                  <div className="overflow-y-auto p-4 space-y-5 scrollbar-hide">
                       {/* Pending List */}
                       {selectedDay.tasks.filter(t => !isTaskDone(t)).length > 0 && (
-                          <div>
-                              <h4 className="text-[10px] font-bold text-orange-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                                  <Circle size={10} /> 待办事项
+                          <div className="space-y-2">
+                              <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 pl-1">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-orange-400"></div> 待办事项 ({selectedDay.tasks.filter(t => !isTaskDone(t)).length})
                               </h4>
                               <div className="space-y-2">
                                   {selectedDay.tasks.filter(t => !isTaskDone(t)).map(task => (
-                                      <div key={task.id} className="flex items-center justify-between p-2 rounded-lg bg-orange-50 border border-orange-100">
-                                          <div className="flex flex-col">
-                                              <span className="text-xs font-bold text-gray-700">{task.title}</span>
-                                              <div className="flex items-center gap-1 mt-0.5">
+                                      <div key={task.id} className="group flex items-start justify-between p-3 rounded-xl bg-white border border-gray-100 shadow-sm hover:border-orange-200 hover:shadow-md transition-all">
+                                          <div className="flex flex-col gap-1 min-w-0">
+                                              <span className="text-sm font-bold text-gray-800 truncate leading-tight">{task.title}</span>
+                                              <div className="flex items-center flex-wrap gap-1.5">
                                                   {task.group && (
-                                                      <span className="text-[8px] px-1.5 py-0.5 bg-white rounded text-gray-400 flex items-center gap-0.5">
+                                                      <span className="text-[9px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded font-medium flex items-center gap-0.5 whitespace-nowrap">
                                                           <Tag size={8} /> {task.group}
                                                       </span>
                                                   )}
                                                   {task.type === TaskType.NUMERIC && (
-                                                      <span className="text-[9px] text-orange-600">
-                                                          目标: {task.targetValue} {task.unit}
+                                                      <span className="text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded font-medium whitespace-nowrap">
+                                                          进度: {task.currentValue}/{task.targetValue} {task.unit}
                                                       </span>
                                                   )}
                                               </div>
                                           </div>
+                                          <Circle className="text-orange-400 shrink-0 mt-0.5" size={16} />
                                       </div>
                                   ))}
                               </div>
@@ -212,20 +222,31 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ tasks }) => {
 
                       {/* Completed List */}
                       {selectedDay.tasks.filter(t => isTaskDone(t)).length > 0 && (
-                          <div>
-                              <h4 className="text-[10px] font-bold text-green-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                                  <CheckCircle2 size={10} /> 已完成
+                          <div className="space-y-2">
+                              <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 pl-1">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div> 已完成 ({selectedDay.tasks.filter(t => isTaskDone(t)).length})
                               </h4>
                               <div className="space-y-2">
                                   {selectedDay.tasks.filter(t => isTaskDone(t)).map(task => (
-                                      <div key={task.id} className="flex items-center justify-between p-2 rounded-lg bg-green-50 border border-green-100 opacity-80">
-                                           <div className="flex flex-col">
-                                              <span className="text-xs font-bold text-gray-600 line-through decoration-gray-400">{task.title}</span>
+                                      <div key={task.id} className="flex items-start justify-between p-3 rounded-xl bg-gray-50/80 border border-gray-100/50">
+                                           <div className="flex flex-col gap-1 min-w-0">
+                                              <span className="text-sm font-bold text-gray-500 line-through decoration-gray-300 truncate leading-tight">{task.title}</span>
+                                              {task.group && (
+                                                  <span className="text-[9px] text-gray-400 flex items-center gap-0.5">
+                                                      <Tag size={8} /> {task.group}
+                                                  </span>
+                                              )}
                                           </div>
-                                          <CheckCircle2 size={14} className="text-green-500" />
+                                          <CheckCircle2 size={16} className="text-green-500/80 shrink-0 mt-0.5" />
                                       </div>
                                   ))}
                               </div>
+                          </div>
+                      )}
+                      
+                      {selectedDay.tasks.length === 0 && (
+                          <div className="text-center py-8 text-gray-300 text-xs">
+                              今日无任务
                           </div>
                       )}
                   </div>
