@@ -1,13 +1,14 @@
 import { createPool } from '@vercel/postgres';
 
-// Centralized database connection helper
+// Use a global variable to store the pool across hot reloads in development
+// and container reuse in production lambda environments.
+let pool: any;
+
 export const getDb = () => {
-    // 1. Try POSTGRES_URL (Standard Vercel Postgres)
-    // 2. Try DATABASE_URL (Standard Prisma / Generic Postgres)
-    // 3. Try PRISMA_DATABASE_URL (Specific Prisma)
+    if (pool) return pool;
+
     let url = process.env.POSTGRES_URL || process.env.DATABASE_URL || process.env.PRISMA_DATABASE_URL;
-    
-    // Log which keys exist (security: do not log the actual secrets)
+
     console.log("DB Init Check:", {
         hasPostgresUrl: !!process.env.POSTGRES_URL,
         hasDatabaseUrl: !!process.env.DATABASE_URL,
@@ -16,7 +17,8 @@ export const getDb = () => {
     });
 
     if (!url) {
-        console.error("Database Connection Error: No connection string found.");
+        // If no URL is found, we throw an error that will be caught by the API handlers.
+        // We do NOT return a pool here to prevent 'undefined' errors later.
         throw new Error("Database configuration missing. Please check POSTGRES_URL or DATABASE_URL in Vercel settings.");
     }
 
@@ -28,16 +30,16 @@ export const getDb = () => {
     }
 
     // Create a pool with the found connection string
-    return createPool({
+    // We set a connectionTimeoutMillis to fail fast if the DB is sleeping or unreachable,
+    // avoiding the request hanging until Vercel kills it (504 Gateway Timeout).
+    pool = createPool({
         connectionString: url,
-        /* 
-           SSL Configuration:
-           We use 'rejectUnauthorized: false' to allow connections to databases 
-           that might use self-signed certificates or have complex SSL chains (common in some serverless/pooling setups).
-           This resolves many "Connection Timeout" or "SSL Error" issues.
-        */
         ssl: {
             rejectUnauthorized: false
-        }
+        },
+        connectionTimeoutMillis: 5000, // 5 seconds timeout
+        max: 1 // Keep max connections low for serverless
     });
+
+    return pool;
 };

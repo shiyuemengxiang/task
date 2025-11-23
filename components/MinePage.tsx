@@ -87,19 +87,29 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       setHealthLoading(true);
       try {
           const res = await fetch('/api/health');
-          // Note: API now returns 200 even for errors to provide JSON details
-          const data = await res.json();
-          setHealthStatus(data);
+          const contentType = res.headers.get("content-type");
           
-          if (data.status === 'ok' && !data.tablesExist) {
-              setAuthError({ 
-                  success: false, 
-                  message: '数据库连接正常，但表未创建', 
-                  errorType: 'DB_NOT_INIT' 
-              });
+          if (contentType && contentType.includes("application/json")) {
+             const data = await res.json();
+             setHealthStatus(data);
+             
+             if (data.status === 'ok' && !data.tablesExist) {
+                  setAuthError({ 
+                      success: false, 
+                      message: '数据库连接正常，但表未创建', 
+                      errorType: 'DB_NOT_INIT' 
+                  });
+             }
+          } else {
+             // Handle raw text/HTML response (often Vercel 500 error page)
+             const text = await res.text();
+             setHealthStatus({ 
+                 status: 'server_error', 
+                 message: `服务器返回非 JSON 响应 (${res.status})。可能是函数崩溃。详情: ${text.substring(0, 150)}...` 
+             });
           }
-      } catch (e) {
-          setHealthStatus({ status: 'network_error', message: '无法连接到服务器 API' });
+      } catch (e: any) {
+          setHealthStatus({ status: 'network_error', message: `无法连接到服务器 API: ${e.message}` });
       } finally {
           setHealthLoading(false);
       }
@@ -109,17 +119,26 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
       setIsDbInitLoading(true);
       try {
           const res = await fetch('/api/create-table');
-          const data = await res.json();
+          const contentType = res.headers.get("content-type");
+          
+          let data;
+          if (contentType && contentType.includes("application/json")) {
+              data = await res.json();
+          } else {
+              const text = await res.text();
+              throw new Error(`Server Error (${res.status}): ${text.slice(0, 100)}`);
+          }
+
           if (res.ok) {
               alert('数据库初始化成功！请重新尝试登录或注册。');
               setAuthError(null);
               setHealthStatus(prev => prev ? { ...prev, tablesExist: true } : null);
               setShowDiagnostics(false);
           } else {
-              alert(`初始化失败: ${JSON.stringify(data)}`);
+              alert(`初始化失败: ${data.message || JSON.stringify(data)}`);
           }
-      } catch (e) {
-          alert('初始化请求失败，请检查网络');
+      } catch (e: any) {
+          alert(`初始化请求失败: ${e.message}`);
       } finally {
           setIsDbInitLoading(false);
       }
@@ -443,7 +462,7 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
           </div>
           <div className="flex-1">
               <h3 className="text-sm font-bold text-gray-800">关于 Cyclic Pro</h3>
-              <p className="text-[10px] text-gray-400">版本 v2.1 (Enhanced DB Support)</p>
+              <p className="text-[10px] text-gray-400">版本 v2.2 (Singleton DB)</p>
           </div>
       </div>
     </div>
