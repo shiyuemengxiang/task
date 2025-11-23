@@ -106,16 +106,16 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
              let errorMsg = text;
              
              if (text.includes("FUNCTION_INVOCATION_FAILED")) {
-                 errorMsg = "Server Error: FUNCTION_INVOCATION_FAILED. 请检查 Vercel 日志。";
+                 errorMsg = "Server Error: FUNCTION_INVOCATION_FAILED. 代码执行崩溃，请检查 Vercel 日志。";
              } else if (text.includes('<title>')) {
                  const match = text.match(/<title>(.*?)<\/title>/);
                  if (match) errorMsg = match[1];
              }
              
              setHealthStatus({ 
-                 status: 'server_error', 
+                 status: 'server_crash', 
                  message: `HTTP ${res.status}: ${errorMsg.substring(0, 150)}...`,
-                 debug: { HAS_URI: false, MONGO_KEYS: [] } 
+                 debug: { NOTE: "Backend crashed without returning JSON debug info." } 
              });
           }
       } catch (e: any) {
@@ -311,28 +311,30 @@ export const MinePage: React.FC<MinePageProps> = ({ onUserChange }) => {
                         ) : (
                             <div className="bg-gray-50 p-3 rounded-lg text-[10px] space-y-2 border border-gray-100">
                                 {/* Environment / Debug Info */}
-                                <div className="grid grid-cols-1 gap-1 font-mono text-gray-600 pb-2 border-b border-gray-200">
-                                    <div className="flex justify-between">
-                                        <span>Has URI:</span>
-                                        <span className={healthStatus.debug?.HAS_URI ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>
-                                            {healthStatus.debug?.HAS_URI ? 'YES' : 'NO'}
-                                        </span>
+                                {healthStatus.status !== 'server_crash' && (
+                                    <div className="grid grid-cols-1 gap-1 font-mono text-gray-600 pb-2 border-b border-gray-200">
+                                        <div className="flex justify-between">
+                                            <span>Has URI:</span>
+                                            <span className={healthStatus.debug?.HAS_URI ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>
+                                                {healthStatus.debug?.HAS_URI ? 'YES' : 'NO'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>URI Prefix:</span>
+                                            <span>{healthStatus.debug?.URI_PREFIX || 'N/A'}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Avail Keys:</span>
+                                            <span className="truncate max-w-[150px]">{healthStatus.debug?.AVAILABLE_KEYS?.join(',') || 'None'}</span>
+                                        </div>
                                     </div>
-                                    <div className="flex justify-between">
-                                        <span>URI Prefix:</span>
-                                        <span>{healthStatus.debug?.URI_PREFIX || 'N/A'}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span>Keys:</span>
-                                        <span className="truncate max-w-[150px]">{healthStatus.debug?.MONGO_KEYS?.join(',') || 'None'}</span>
-                                    </div>
-                                </div>
+                                )}
 
                                 <div className="flex items-center justify-between font-bold">
-                                    <span>Api Status:</span>
+                                    <span>Result:</span>
                                     {healthStatus.status === 'ok' 
                                         ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={10} /> 正常</span> 
-                                        : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> 异常</span>
+                                        : <span className="text-red-600 flex items-center gap-1"><XCircle size={10} /> {healthStatus.status}</span>
                                     }
                                 </div>
 

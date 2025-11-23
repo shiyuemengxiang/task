@@ -1,83 +1,66 @@
 import { MongoClient, Db, ServerApiVersion } from 'mongodb';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+
+// Safely load env vars without crashing if .env is missing
+try {
+  dotenv.config();
+} catch (e) {
+  // Ignore dotenv errors in production/serverless
+}
 
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
 
 export async function connectToDatabase() {
-  console.log("[DB] Attempting connection...");
+  // 1. Diagnostics: Check Environment Variables safely
+  // We do not throw immediately here to allow health check to inspect env state first
+  const uri = process.env.MONGODB_URI || process.env.MONGODB_URL;
+  const dbName = process.env.MONGODB_DB || 'cyclic_app';
 
   if (cachedClient && cachedDb) {
-     console.log("[DB] Returning cached connection");
      return { client: cachedClient, db: cachedDb };
   }
 
-  // 1. Diagnostics: Check Environment Variables
-  const envKeys = Object.keys(process.env);
-  const mongoKeys = envKeys.filter(k => k.toUpperCase().includes('MONGO') || k.toUpperCase().includes('DB'));
-  console.log("[DB] Available Env Keys:", JSON.stringify(mongoKeys));
-
-  let uri = process.env.MONGODB_URI || process.env.MONGODB_URL;
-  const dbName = process.env.MONGODB_DB || 'cyclic_app';
-
+  // 2. Validation
   if (!uri) {
-      const msg = `MONGODB_URI is undefined. Available keys in process.env: ${mongoKeys.join(', ')}`;
-      console.error(msg);
-      throw new Error(msg);
+      const envKeys = Object.keys(process.env).filter(k => k.toUpperCase().includes('MONGO') || k.toUpperCase().includes('DB'));
+      throw new Error(`MONGODB_URI is undefined. Available keys: [${envKeys.join(', ')}]`);
   }
 
-  // 2. Sanitization
-  // Trim whitespace
-  uri = uri.trim();
-  // Remove wrapping quotes if present (common .env parsing issue)
-  if ((uri.startsWith('"') && uri.endsWith('"')) || (uri.startsWith("'") && uri.endsWith("'"))) {
-      uri = uri.slice(1, -1);
-  }
-
-  // Log masked URI for security
-  const maskedUri = uri.replace(/(:)([^:@]+)(@)/, '$1*****$3'); 
-  console.log(`[DB] Using URI (Masked): ${maskedUri}`);
-
-  // Basic validation
-  if (!uri.startsWith("mongodb")) {
-      const msg = `Invalid Protocol. URI starts with: '${uri.substring(0, 10)}...' (Expected 'mongodb://' or 'mongodb+srv://')`;
-      console.error(msg);
-      throw new Error(msg);
+  // Sanitization
+  let cleanUri = uri.trim();
+  // Remove wrapping quotes if present
+  if ((cleanUri.startsWith('"') && cleanUri.endsWith('"')) || (cleanUri.startsWith("'") && cleanUri.endsWith("'"))) {
+      cleanUri = cleanUri.slice(1, -1);
   }
 
   try {
       // 3. Connection
-      console.log("[DB] Initializing MongoClient...");
-      const client = new MongoClient(uri, {
+      const client = new MongoClient(cleanUri, {
         serverApi: {
           version: ServerApiVersion.v1,
           strict: true,
           deprecationErrors: true,
         },
         // Serverless optimizations
-        connectTimeoutMS: 10000, 
-        socketTimeoutMS: 10000,
-        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 5000, 
+        socketTimeoutMS: 5000,
+        serverSelectionTimeoutMS: 5000,
         maxPoolSize: 1, 
       });
 
-      console.log("[DB] client.connect() called...");
       await client.connect();
-      console.log("[DB] Connected to cluster.");
-
       const db = client.db(dbName);
       
       // Ping to verify
       await db.command({ ping: 1 });
-      console.log(`[DB] Ping successful. Database selected: ${dbName}`);
 
       cachedClient = client;
       cachedDb = db;
       
       return { client, db };
   } catch (error: any) {
-      console.error("[DB] FATAL CONNECTION ERROR:", error);
-      // Include specific error name and message
-      throw new Error(`DB Connect Error: [${error.name}] ${error.message}`);
+      console.error("[DB] Connection Error:", error);
+      throw new Error(`DB Connection Failed: ${error.name} - ${error.message}`);
   }
 }
